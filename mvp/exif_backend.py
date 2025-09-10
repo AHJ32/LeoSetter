@@ -2,6 +2,7 @@ import json
 import os
 import shlex
 import subprocess
+import sys
 from typing import Dict, List, Tuple
 
 # Mapping from our UI field names to exiftool tag names (prefer XMP where sane)
@@ -34,8 +35,45 @@ def _run(cmd: List[str]) -> Tuple[int, str, str]:
     return proc.returncode, proc.stdout, proc.stderr
 
 
+def _bundled_exiftool_path() -> str:
+    """Return path to bundled exiftool if running from a frozen app (PyInstaller).
+
+    On Windows builds we may ship tools/exiftool.exe inside the bundle.
+    On Linux we may ship tools/exiftool (optional).
+    """
+    # PyInstaller sets sys.frozen and provides sys._MEIPASS for data files
+    base = getattr(sys, "_MEIPASS", None)
+    if base:
+        # try Windows naming first, then Linux
+        cand_win = os.path.join(base, "tools", "exiftool.exe")
+        cand_lin = os.path.join(base, "tools", "exiftool")
+        if os.path.isfile(cand_win):
+            return cand_win
+        if os.path.isfile(cand_lin):
+            return cand_lin
+    # Also try a relative tools/ folder next to this file (useful for dev builds)
+    here = os.path.dirname(__file__)
+    cand_rel = os.path.join(here, "tools", "exiftool")
+    if os.path.isfile(cand_rel):
+        return cand_rel
+    cand_rel_win = os.path.join(here, "tools", "exiftool.exe")
+    if os.path.isfile(cand_rel_win):
+        return cand_rel_win
+    return ""
+
+
+def _exiftool_cmd() -> str:
+    """Resolve the exiftool command path, preferring bundled binary if present."""
+    bundled = _bundled_exiftool_path()
+    if bundled:
+        return bundled
+    return "exiftool"
+
+
 def ensure_exiftool_available() -> bool:
-    rc, _, _ = _run(["which", "exiftool"])  # type: ignore
+    cmd = _exiftool_cmd()
+    # Try to execute `exiftool -ver` to ensure it is runnable
+    rc, _, _ = _run([cmd, "-ver"])  # type: ignore
     return rc == 0
 
 
@@ -48,7 +86,7 @@ def read_metadata(path: str) -> Dict[str, str]:
     # Build exiftool arg list for all mapped tags
     tags = sorted({t for lst in TAG_MAP.values() for t in lst})
     # -n for numeric output (GPS, rating, etc.)
-    cmd = ["exiftool", "-n", "-s", "-s", "-s", "-json"] + [f"-{t}" for t in tags] + [path]
+    cmd = [_exiftool_cmd(), "-n", "-s", "-s", "-s", "-json"] + [f"-{t}" for t in tags] + [path]
     rc, out, err = _run(cmd)
     if rc != 0:
         raise RuntimeError(f"exiftool read failed: {err.strip()}")
@@ -135,7 +173,7 @@ def write_metadata(path: str, payload: Dict[str, str], skip_keywords: bool = Fal
     if not ensure_exiftool_available():
         raise RuntimeError("exiftool is not installed.")
     # -n enforces numeric input where applicable (GPS, rating)
-    args = ["exiftool", "-n"]
+    args = [_exiftool_cmd(), "-n"]
     if inplace:
         args.append("-overwrite_original")
     else:
@@ -151,7 +189,7 @@ def write_metadata(path: str, payload: Dict[str, str], skip_keywords: bool = Fal
 def clear_metadata(path: str, fields: List[str], inplace: bool = False) -> None:
     if not ensure_exiftool_available():
         raise RuntimeError("exiftool is not installed.")
-    args = ["exiftool"]
+    args = [_exiftool_cmd()]
     if inplace:
         args.append("-overwrite_original")
     for field in fields:
@@ -204,7 +242,7 @@ def read_raw_json(path: str) -> str:
     if not ensure_exiftool_available():
         raise RuntimeError("exiftool is not installed.")
     # Use -G1 for groups, -a for duplicate tags, omit -s to keep full tag names
-    rc, out, err = _run(["exiftool", "-G1", "-a", "-json", path])
+    rc, out, err = _run([_exiftool_cmd(), "-G1", "-a", "-json", path])
     if rc != 0:
         raise RuntimeError(f"exiftool raw read failed: {err.strip()}")
     try:
