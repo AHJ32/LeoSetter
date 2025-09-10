@@ -1,0 +1,624 @@
+import os
+from typing import Dict, List
+from PyQt5.QtCore import Qt, QSettings
+from PyQt5.QtWidgets import (
+    QAction,
+    QApplication,
+    QFileDialog,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QSpinBox,
+    QDoubleSpinBox,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+    QListWidget,
+    QListWidgetItem,
+    QComboBox,
+    QInputDialog,
+    QTextEdit,
+    QDialog,
+)
+from PyQt5.QtGui import QBrush, QColor
+
+from . import exif_backend as xb
+from .map_picker import MapPickerDialog
+
+
+IMAGE_EXTS = {".jpg", ".jpeg", ".tif", ".tiff", ".png", ".webp"}
+
+
+class MVPWindow(QMainWindow):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setWindowTitle("PyGeoSetter MVP")
+        self.resize(1200, 700)
+
+        self.settings = QSettings("PyGeoSetter", "MVP")
+        self.current_folder: str = self.settings.value("last_folder", "", type=str) or ""
+        self.images: List[str] = []
+        # Staging area for batch operations before saving to disk
+        self.pending_changes: Dict[str, Dict[str, str]] = {}
+        # Write mode: when True, pass inplace to backend (overwrite original, no backup)
+        self.overwrite_no_backup: bool = False
+
+        # Actions (with shortcuts similar to GeoSetter)
+        self.open_folder_action = QAction("Open Folder...", self)
+        self.open_folder_action.setShortcut("Ctrl+O")
+        self.open_folder_action.triggered.connect(self.open_folder)
+
+        self.save_current_action = QAction("Save Current", self)
+        self.save_current_action.setShortcut("Ctrl+S")
+        self.save_current_action.triggered.connect(self.save_current)
+
+        # Save All staged changes
+        self.save_all_action = QAction("Save All", self)
+        # Shortcut optional; leaving unset per simplicity
+        self.save_all_action.triggered.connect(self.save_all)
+
+        self.apply_all_action = QAction("Apply To All", self)
+        self.apply_all_action.triggered.connect(self.apply_to_all)
+
+        self.clear_selected_action = QAction("Clear Selected Fields (Batch)", self)
+        # Shortcut removed per user request
+        self.clear_selected_action.triggered.connect(self.clear_selected_fields_batch)
+
+        self.select_all_action = QAction("Select All", self)
+        self.select_all_action.setShortcut("Ctrl+A")
+        self.select_all_action.triggered.connect(self.select_all_images)
+
+        self.refresh_action = QAction("Refresh", self)
+        self.refresh_action.setShortcut("Ctrl+R")
+        self.refresh_action.triggered.connect(self.refresh_folder)
+
+        self.quit_action = QAction("Quit", self)
+        self.quit_action.setShortcut("Ctrl+Q")
+        self.quit_action.triggered.connect(self.close)
+
+        # Batch: Use Filenames for Title/Subject/Comments
+        self.use_filenames_action = QAction("Use Filenames (Title/Subject/Comments)", self)
+        self.use_filenames_action.triggered.connect(self.apply_filenames_to_all)
+
+        # Batch: Set Tags for all images
+        self.set_tags_action = QAction("Set Tags For All…", self)
+        self.set_tags_action.triggered.connect(self.set_tags_for_all)
+
+        # Settings: overwrite original (no backup)
+        self.overwrite_action = QAction("Overwrite original (no backup)", self)
+        self.overwrite_action.setCheckable(True)
+        self.overwrite_action.setChecked(False)
+        self.overwrite_action.toggled.connect(self._toggle_overwrite)
+
+        # Menu
+        m_file = self.menuBar().addMenu("&File")
+        m_file.addAction(self.open_folder_action)
+        m_file.addSeparator()
+        m_file.addAction(self.save_current_action)
+        m_file.addAction(self.save_all_action)
+        m_file.addAction(self.apply_all_action)
+        m_file.addSeparator()
+        m_file.addAction(self.clear_selected_action)
+        m_file.addAction(self.use_filenames_action)
+        m_file.addAction(self.set_tags_action)
+        m_file.addSeparator()
+        m_file.addAction(self.overwrite_action)
+        m_file.addSeparator()
+        m_file.addAction(self.select_all_action)
+        m_file.addAction(self.refresh_action)
+        m_file.addSeparator()
+        m_file.addAction(self.quit_action)
+
+        m_templates = self.menuBar().addMenu("&Templates")
+        # Template actions in the menu
+        self.act_save_template = QAction("Save Template…", self)
+        self.act_save_template.triggered.connect(self.save_template_dialog)
+        self.act_apply_template = QAction("Apply Template (Skip Keywords)", self)
+        self.act_apply_template.triggered.connect(self.apply_template_dialog)
+        self.act_manage_templates = QAction("Manage Templates…", self)
+        self.act_manage_templates.triggered.connect(self.manage_templates_dialog)
+        m_templates.addAction(self.act_save_template)
+        m_templates.addAction(self.act_apply_template)
+        m_templates.addSeparator()
+        m_templates.addAction(self.act_manage_templates)
+
+        # Templates toolbar removed to prevent duplication; use the menu instead.
+
+        # View menu with Full Metadata viewer
+        m_view = self.menuBar().addMenu("&View")
+        self.view_full_meta_action = QAction("View Full Metadata", self)
+        self.view_full_meta_action.triggered.connect(self.view_full_metadata)
+        m_view.addAction(self.view_full_meta_action)
+
+        # Main toolbar with common actions
+        main_tb = self.addToolBar("Main")
+        main_tb.addAction(self.open_folder_action)
+        main_tb.addAction(self.save_current_action)
+        main_tb.addAction(self.save_all_action)
+        main_tb.addAction(self.apply_all_action)
+        main_tb.addAction(self.clear_selected_action)
+        main_tb.addSeparator()
+        main_tb.addAction(self.select_all_action)
+        main_tb.addAction(self.refresh_action)
+
+        # Central UI
+        splitter = QSplitter(Qt.Horizontal)
+        self.setCentralWidget(splitter)
+
+        # Left: file list
+        left_container = QWidget()
+        left_layout = QVBoxLayout(left_container)
+        self.folder_label = QLabel("No folder selected")
+        left_layout.addWidget(self.folder_label)
+        self.file_list = QListWidget()
+        self.file_list.itemSelectionChanged.connect(self.on_file_selected)
+        left_layout.addWidget(self.file_list, 1)
+
+        # Buttons under list
+        btn_row = QHBoxLayout()
+        self.btn_open = QPushButton("Open Folder…")
+        self.btn_open.clicked.connect(self.open_folder)
+        btn_row.addWidget(self.btn_open)
+        left_layout.addLayout(btn_row)
+
+        splitter.addWidget(left_container)
+
+        # Right: form
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+
+        form_group = QGroupBox("Metadata")
+        form = QFormLayout(form_group)
+
+        # Description
+        self.f_Title = QLineEdit()
+        self.f_Subject = QLineEdit()
+        self.f_Rating = QSpinBox(); self.f_Rating.setRange(0, 5)
+        self.f_Tags = QLineEdit()  # comma-separated
+        self.f_Comments = QLineEdit()
+
+        form.addRow("Title", self.f_Title)
+        form.addRow("Subject", self.f_Subject)
+        form.addRow("Rating (0-5)", self.f_Rating)
+        form.addRow("Tags (comma)", self.f_Tags)
+        form.addRow("Comments", self.f_Comments)
+
+        # Origin
+        self.f_Authors = QLineEdit()
+        self.f_DateTaken = QLineEdit()
+        self.f_ProgramName = QLineEdit()
+        self.f_DateAcquired = QLineEdit()
+        self.f_Copyright = QLineEdit()
+
+        form.addRow(QLabel("\nOrigin"))
+        form.addRow("Authors", self.f_Authors)
+        form.addRow("Date taken", self.f_DateTaken)
+        form.addRow("Program name", self.f_ProgramName)
+        form.addRow("Date acquired", self.f_DateAcquired)
+        form.addRow("Copyright", self.f_Copyright)
+
+        # GPS
+        self.f_GPSLatitude = QDoubleSpinBox(); self.f_GPSLatitude.setRange(-90.0, 90.0); self.f_GPSLatitude.setDecimals(8)
+        self.f_GPSLongitude = QDoubleSpinBox(); self.f_GPSLongitude.setRange(-180.0, 180.0); self.f_GPSLongitude.setDecimals(8)
+        self.f_GPSAltitude = QDoubleSpinBox(); self.f_GPSAltitude.setRange(-10000.0, 100000.0); self.f_GPSAltitude.setDecimals(2)
+
+        form.addRow(QLabel("\nGPS"))
+        form.addRow("Latitude", self.f_GPSLatitude)
+        form.addRow("Longitude", self.f_GPSLongitude)
+        form.addRow("Altitude (m)", self.f_GPSAltitude)
+
+        # Map picker button
+        map_btn_row = QHBoxLayout()
+        self.btn_pick_map = QPushButton("Pick on Map…")
+        self.btn_pick_map.setToolTip("Click a location on the map or search a country/place to set GPS")
+        self.btn_pick_map.clicked.connect(self.pick_on_map)
+        map_btn_row.addWidget(self.btn_pick_map)
+        map_btn_row.addStretch(1)
+        right_layout.addLayout(map_btn_row)
+
+        right_layout.addWidget(form_group)
+
+        # Buttons
+        button_bar = QHBoxLayout()
+        self.btn_save_current = QPushButton("Save Current")
+        self.btn_save_current.clicked.connect(self.save_current)
+        self.btn_apply_all = QPushButton("Apply To All")
+        self.btn_apply_all.clicked.connect(lambda: self.apply_to_all(skip_keywords=False))
+        self.btn_clear = QPushButton("Clear Selected Fields (Batch)")
+        self.btn_clear.clicked.connect(self.clear_selected_fields_batch)
+
+        # Template buttons moved to the top navbar (menu + toolbar)
+
+        button_bar.addWidget(self.btn_save_current)
+        button_bar.addWidget(self.btn_apply_all)
+        button_bar.addWidget(self.btn_clear)
+        # Template buttons removed from here
+
+        right_layout.addLayout(button_bar)
+        splitter.addWidget(right)
+        splitter.setStretchFactor(1, 1)
+
+        if self.current_folder and os.path.isdir(self.current_folder):
+            self.load_folder(self.current_folder)
+
+    # Utility
+    def current_path(self) -> str:
+        items = self.file_list.selectedItems()
+        if not items:
+            return ""
+        return items[0].data(Qt.UserRole) or ""
+
+    def payload_from_form(self) -> Dict[str, str]:
+        return {
+            "Title": self.f_Title.text(),
+            "Subject": self.f_Subject.text(),
+            "Rating": str(self.f_Rating.value()),
+            "Tags": self.f_Tags.text(),
+            "Comments": self.f_Comments.text(),
+            "Authors": self.f_Authors.text(),
+            "DateTaken": self.f_DateTaken.text(),
+            "ProgramName": self.f_ProgramName.text(),
+            "DateAcquired": self.f_DateAcquired.text(),
+            "Copyright": self.f_Copyright.text(),
+            "GPSLatitude": str(self.f_GPSLatitude.value()),
+            "GPSLongitude": str(self.f_GPSLongitude.value()),
+            "GPSAltitude": str(self.f_GPSAltitude.value()),
+        }
+
+    def set_form(self, data: Dict[str, str]) -> None:
+        self.f_Title.setText(data.get("Title", ""))
+        self.f_Subject.setText(data.get("Subject", ""))
+        self.f_Rating.setValue(int(data.get("Rating", "0") or 0))
+        self.f_Tags.setText(data.get("Tags", ""))
+        self.f_Comments.setText(data.get("Comments", ""))
+        self.f_Authors.setText(data.get("Authors", ""))
+        self.f_DateTaken.setText(data.get("DateTaken", ""))
+        self.f_ProgramName.setText(data.get("ProgramName", ""))
+        self.f_DateAcquired.setText(data.get("DateAcquired", ""))
+        self.f_Copyright.setText(data.get("Copyright", ""))
+        # GPS
+        try:
+            self.f_GPSLatitude.setValue(float(data.get("GPSLatitude", "0") or 0))
+        except ValueError:
+            self.f_GPSLatitude.setValue(0.0)
+        try:
+            self.f_GPSLongitude.setValue(float(data.get("GPSLongitude", "0") or 0))
+        except ValueError:
+            self.f_GPSLongitude.setValue(0.0)
+        try:
+            self.f_GPSAltitude.setValue(float(data.get("GPSAltitude", "0") or 0))
+        except ValueError:
+            self.f_GPSAltitude.setValue(0.0)
+
+    # Folder & files
+    def open_folder(self) -> None:
+        folder = QFileDialog.getExistingDirectory(self, "Select Folder", self.current_folder or os.path.expanduser("~"))
+        if not folder:
+            return
+        self.load_folder(folder)
+
+    def load_folder(self, folder: str) -> None:
+        if not xb.ensure_exiftool_available():
+            QMessageBox.critical(self, "Missing dependency", "exiftool is not installed. Please install it (sudo apt install exiftool).")
+            return
+        self.current_folder = folder
+        self.settings.setValue("last_folder", folder)
+        self.folder_label.setText(folder)
+        self.file_list.clear()
+        self.images = []
+        for root, _, files in os.walk(folder):
+            for f in files:
+                ext = os.path.splitext(f)[1].lower()
+                if ext in IMAGE_EXTS:
+                    p = os.path.join(root, f)
+                    self.images.append(p)
+        self.images.sort()
+        for p in self.images:
+            item = QListWidgetItem(os.path.relpath(p, folder))
+            item.setData(Qt.UserRole, p)
+            self.file_list.addItem(item)
+        if self.images:
+            self.file_list.setCurrentRow(0)
+        self.statusBar().showMessage(f"Loaded {len(self.images)} file(s)", 3000)
+        # Apply staged highlighting
+        self.refresh_item_markers()
+
+    def on_file_selected(self) -> None:
+        path = self.current_path()
+        if not path:
+            return
+        try:
+            data = xb.read_metadata(path)
+            # Overlay staged changes if present for this file
+            staged = self.pending_changes.get(path)
+            if staged:
+                data = {**data, **staged}
+            self.set_form(data)
+            self.statusBar().showMessage(f"Loaded metadata: {os.path.basename(path)}", 2000)
+        except Exception as e:
+            QMessageBox.warning(self, "Read Error", str(e))
+
+    def apply_filenames_to_all(self) -> None:
+        if not self.images:
+            QMessageBox.information(self, "No images", "Open a folder with images first.")
+            return
+        # Confirm action
+        if QMessageBox.question(
+            self,
+            "Use Filenames",
+            "Set Title, Subject, and Comments to each image's filename for ALL images in this folder?",
+            QMessageBox.Yes | QMessageBox.No,
+        ) != QMessageBox.Yes:
+            return
+        # Stage changes only; do not write yet
+        for p in self.images:
+            name = os.path.splitext(os.path.basename(p))[0]
+            updates = {"Title": name, "Subject": name, "Comments": name}
+            self._stage_changes(p, updates)
+        QMessageBox.information(self, "Use Filenames (Staged)", "Staged Title/Subject/Comments for all images. Click 'Save All' to write.")
+        self.statusBar().showMessage("Staged filenames for all images", 4000)
+        self.refresh_item_markers()
+
+    def set_tags_for_all(self) -> None:
+        if not self.images:
+            QMessageBox.information(self, "No images", "Open a folder with images first.")
+            return
+        # Ask for tags (comma-separated)
+        text, ok = QInputDialog.getText(self, "Set Tags For All", "Enter tags (comma-separated):")
+        if not ok:
+            return
+        tags = text.strip()
+        # Stage tag updates only; do not write yet
+        for p in self.images:
+            self._stage_changes(p, {"Tags": tags})
+        QMessageBox.information(self, "Tags (Staged)", "Staged tags for all images. Click 'Save All' to write.")
+        self.statusBar().showMessage("Staged tags for all images", 3000)
+        self.refresh_item_markers()
+
+    # Save/apply
+    def save_current(self) -> None:
+        path = self.current_path()
+        if not path:
+            QMessageBox.information(self, "No selection", "Select a file first.")
+            return
+        try:
+            xb.write_metadata(path, self.payload_from_form(), skip_keywords=False, inplace=self.overwrite_no_backup)
+            QMessageBox.information(self, "Saved", "Metadata written (a copy file may be created by exiftool).")
+            self.statusBar().showMessage("Saved current image", 2000)
+        except Exception as e:
+            QMessageBox.critical(self, "Write Error", str(e))
+
+    def apply_to_all(self, skip_keywords: bool = False) -> None:
+        if not self.images:
+            QMessageBox.information(self, "No images", "Open a folder with images first.")
+            return
+        payload = self.payload_from_form()
+        try:
+            xb.batch_apply(self.images, payload, skip_keywords=skip_keywords, inplace=self.overwrite_no_backup)
+            QMessageBox.information(self, "Batch", "Applied metadata to all images (copies created).")
+            self.statusBar().showMessage("Applied to all images", 3000)
+        except Exception as e:
+            QMessageBox.critical(self, "Batch Error", str(e))
+
+    def clear_selected_fields_batch(self) -> None:
+        if not self.images:
+            QMessageBox.information(self, "No images", "Open a folder first.")
+            return
+        # Determine selected fields based on non-empty inputs (simple UX for MVP)
+        fields: List[str] = []
+        mapping = {
+            "Title": self.f_Title.text(),
+            "Subject": self.f_Subject.text(),
+            "Rating": str(self.f_Rating.value()) if self.f_Rating.value() else "",
+            "Tags": self.f_Tags.text(),
+            "Comments": self.f_Comments.text(),
+            "Authors": self.f_Authors.text(),
+            "DateTaken": self.f_DateTaken.text(),
+            "ProgramName": self.f_ProgramName.text(),
+            "DateAcquired": self.f_DateAcquired.text(),
+            "Copyright": self.f_Copyright.text(),
+            "GPSLatitude": str(self.f_GPSLatitude.value()),
+            "GPSLongitude": str(self.f_GPSLongitude.value()),
+            "GPSAltitude": str(self.f_GPSAltitude.value()),
+        }
+        for k, v in mapping.items():
+            if v:
+                fields.append(k)
+        if not fields:
+            if QMessageBox.question(
+                self,
+                "Clear All?",
+                "No fields typed. Clear ALL supported fields in batch?",
+                QMessageBox.Yes | QMessageBox.No,
+            ) != QMessageBox.Yes:
+                return
+            # Clear all known fields
+            fields = list(xb.TAG_MAP.keys())
+        try:
+            xb.batch_clear(self.images, fields, inplace=self.overwrite_no_backup)
+            QMessageBox.information(self, "Batch Clear", "Selected fields cleared for all images (in-place overwrite).")
+            self.statusBar().showMessage("Cleared selected fields for all", 3000)
+        except Exception as e:
+            QMessageBox.critical(self, "Batch Clear Error", str(e))
+
+    # Selection and refresh helpers
+    def select_all_images(self) -> None:
+        if self.file_list.count() == 0:
+            return
+        self.file_list.selectAll()
+
+    def refresh_folder(self) -> None:
+        if self.current_folder and os.path.isdir(self.current_folder):
+            self.load_folder(self.current_folder)
+        else:
+            self.statusBar().showMessage("No folder to refresh", 2000)
+
+    # Map picker
+    def pick_on_map(self) -> None:
+        try:
+            start_lat = float(self.f_GPSLatitude.value())
+        except Exception:
+            start_lat = 0.0
+        try:
+            start_lon = float(self.f_GPSLongitude.value())
+        except Exception:
+            start_lon = 0.0
+        lat, lon, ok = MapPickerDialog.get_location(self, start_lat, start_lon)
+        if ok and lat is not None and lon is not None:
+            self.f_GPSLatitude.setValue(float(lat))
+            self.f_GPSLongitude.setValue(float(lon))
+
+    # Templates
+    def refresh_templates(self) -> None:
+        self.templates = xb.load_templates()
+
+    def save_template_dialog(self) -> None:
+        # Ask only for a template name; store internally under mvp/templates/templates.json
+        name, ok = QInputDialog.getText(self, "Save Template", "Template name:")
+        if not ok or not name.strip():
+            return
+        key = name.strip()
+        payload = self.payload_from_form()
+        self.refresh_templates()
+        self.templates[key] = payload
+        xb.save_templates(self.templates)
+        QMessageBox.information(self, "Template Saved", f"Saved template '{key}'.")
+
+    def apply_template_dialog(self) -> None:
+        self.refresh_templates()
+        if not self.templates:
+            QMessageBox.information(self, "No Templates", "Save a template first.")
+            return
+        # Choose from existing stored templates
+        names = sorted(self.templates.keys())
+        key, ok = QInputDialog.getItem(self, "Choose Template", "Template:", names, 0, False)
+        if not ok or not key:
+            return
+        payload = self.templates.get(key)
+        if not payload:
+            return
+        payload_skipped = dict(payload)
+        for k in ("Tags", "Title", "Subject", "Comments"):
+            payload_skipped.pop(k, None)
+        self.set_form(payload_skipped)
+        if QMessageBox.question(
+            self,
+            "Apply",
+            "Apply template to all images now (Keywords excluded)?",
+            QMessageBox.Yes | QMessageBox.No,
+        ) == QMessageBox.Yes:
+            # Stage template payload for all (excluding protected fields); do not write yet
+            batch_payload = self.payload_from_form()
+            for k in ("Title", "Subject", "Comments", "Tags"):
+                batch_payload.pop(k, None)
+            for p in self.images:
+                self._stage_changes(p, batch_payload)
+            QMessageBox.information(self, "Template (Staged)", "Staged template fields for all images. Click 'Save All' to write.")
+            self.statusBar().showMessage("Staged template for all images", 3000)
+            self.refresh_item_markers()
+
+    def manage_templates_dialog(self) -> None:
+        self.refresh_templates()
+        if not self.templates:
+            QMessageBox.information(self, "Templates", "No templates saved yet.")
+            return
+        names = sorted(self.templates.keys())
+        key, ok = QInputDialog.getItem(self, "Manage Templates", "Select template:", names, 0, False)
+        if not ok or not key:
+            return
+        action = QMessageBox.question(
+            self,
+            "Manage",
+            f"Rename or Delete template '{key}'?",
+            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+        )
+        # We will treat Yes as Rename, No as Delete to keep it simple
+        if action == QMessageBox.Yes:
+            new_name, ok2 = QInputDialog.getText(self, "Rename Template", "New name:", text=key)
+            if not ok2 or not new_name.strip():
+                return
+            new_key = new_name.strip()
+            if new_key != key:
+                self.templates[new_key] = self.templates.pop(key)
+                xb.save_templates(self.templates)
+                QMessageBox.information(self, "Templates", f"Renamed to '{new_key}'.")
+        elif action == QMessageBox.No:
+            if QMessageBox.question(self, "Confirm Delete", f"Delete template '{key}'?", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
+                self.templates.pop(key, None)
+                xb.save_templates(self.templates)
+                QMessageBox.information(self, "Templates", "Template deleted.")
+
+    def closeEvent(self, event):
+        if self.current_folder:
+            self.settings.setValue("last_folder", self.current_folder)
+        super().closeEvent(event)
+
+    # --- Staging helpers and Save All ---
+    def _stage_changes(self, path: str, updates: Dict[str, str]) -> None:
+        existing = self.pending_changes.get(path, {})
+        existing.update({k: v for k, v in updates.items() if v is not None})
+        self.pending_changes[path] = existing
+
+    def save_all(self) -> None:
+        if not self.pending_changes:
+            QMessageBox.information(self, "Save All", "No staged changes to save.")
+            return
+        errors = []
+        total = 0
+        for p, payload in self.pending_changes.items():
+            try:
+                xb.write_metadata(p, payload, skip_keywords=False, inplace=self.overwrite_no_backup)
+                total += 1
+            except Exception as e:
+                errors.append(f"{os.path.basename(p)}: {e}")
+        self.pending_changes.clear()
+        if errors:
+            QMessageBox.warning(self, "Save All", "Some files failed to save:\n" + "\n".join(errors[:10]))
+        QMessageBox.information(self, "Save All", f"Saved {total} file(s).")
+        self.statusBar().showMessage(f"Saved {total} file(s)", 4000)
+        # Remove highlighting after save
+        self.refresh_item_markers()
+
+    def _toggle_overwrite(self, checked: bool) -> None:
+        self.overwrite_no_backup = checked
+        msg = "Overwrite mode ON: writing directly to originals (no backup)." if checked else "Overwrite mode OFF: changes will not overwrite originals."
+        self.statusBar().showMessage(msg, 4000)
+
+    # --- UI marking helpers ---
+    def refresh_item_markers(self) -> None:
+        """Color items with staged changes (e.g., yellow)."""
+        yellow = QBrush(QColor(255, 235, 130))  # soft yellow
+        default = QBrush()
+        for i in range(self.file_list.count()):
+            item = self.file_list.item(i)
+            path = item.data(Qt.UserRole)
+            if path in self.pending_changes:
+                item.setBackground(yellow)
+            else:
+                item.setBackground(default)
+
+    # --- Viewers ---
+    def view_full_metadata(self) -> None:
+        path = self.current_path()
+        if not path:
+            QMessageBox.information(self, "No selection", "Select a file first.")
+            return
+        try:
+            raw = xb.read_raw_json(path)
+        except Exception as e:
+            QMessageBox.critical(self, "Metadata", str(e))
+            return
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Full Metadata (read-only)")
+        dlg.resize(800, 600)
+        lay = QVBoxLayout(dlg)
+        txt = QTextEdit(dlg)
+        txt.setReadOnly(True)
+        txt.setPlainText(raw)
+        lay.addWidget(txt)
+        dlg.exec_()

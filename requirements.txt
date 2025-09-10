@@ -1,0 +1,7 @@
+# Minimal runtime dependency for the MVP UI
+PyQt5>=5.15.0
+PyQtWebEngine>=5.15.0
+
+# Note: exiftool is required and is installed via your OS package manager, not pip.
+# On Debian/Ubuntu/Pop!_OS:
+#   sudo apt-get install -y exiftool
