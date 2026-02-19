@@ -52,6 +52,7 @@ class ExifWorker(QThread):
     def run(self):
         try:
             if self.mode == 'read':
+                # Return an empty dict if xb.read_metadata returns None, preventing TypeError
                 data = xb.read_metadata(self.path_or_paths) or {}
                 self.finished.emit(data)
             elif self.mode == 'write':
@@ -760,6 +761,7 @@ class MVPWindow(QMainWindow):
         self.centralWidget().setEnabled(False)
         self.statusBar().showMessage(f"Saving {len(self.pending_changes)} files...")
         
+        # We must clone the pending changes dict since ExifWorker expects a dict payload
         pending_copy = dict(self.pending_changes)
         
         self._worker = ExifWorker(
@@ -769,22 +771,30 @@ class MVPWindow(QMainWindow):
             inplace=self.overwrite_no_backup
         )
         self._worker.progress.connect(lambda cur, tot: self.statusBar().showMessage(f"Saving {cur}/{tot}..."))
-        self._worker.finished.connect(lambda res: self._on_save_all_finished(res, pending_copy))
+        # Using lambda to pass pending_copy fails PyQT type serialization over threads sometimes
+        # We'll just define a wrapper method to avoid connecting a lambda with complex local state.
+        self._worker.finished.connect(self._on_save_all_finished)
         self._worker.error.connect(self._on_worker_error)
+        
+        # Save reference to requested files for cleanup later
+        self._last_save_all_requested = list(pending_copy.keys())
         self._worker.start()
 
-    def _on_save_all_finished(self, res: dict, requested: dict) -> None:
+    def _on_save_all_finished(self, res: dict) -> None:
         self.centralWidget().setEnabled(True)
         errors = res.get("errors", [])
         total_saved = res.get("total", 0)
         
         # Only clear from pending what was attempted/saved
-        for p in requested.keys():
-            self.pending_changes.pop(p, None)
+        if hasattr(self, '_last_save_all_requested'):
+            for p in self._last_save_all_requested:
+                self.pending_changes.pop(p, None)
             
         if errors:
             QMessageBox.warning(self, "Save All", "Some files failed to save:\n" + "\n".join(errors[:10]))
-        QMessageBox.information(self, "Save All", f"Saved {total_saved} file(s).")
+        else:
+            QMessageBox.information(self, "Save All", f"Saved {total_saved} file(s).")
+            
         self.statusBar().showMessage(f"Saved {total_saved} file(s)", 4000)
         self.refresh_item_markers()
 
