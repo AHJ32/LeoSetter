@@ -1,8 +1,8 @@
 # Building Executables (Linux and Windows)
 
-This guide explains how to build standalone executables for GeoSetter MVP using PyInstaller.
+This guide explains how to build standalone executables for LeoSetter using PyInstaller.
 
-The MVP entry point is `run_mvp.py` which launches `mvp/app.py`.
+The entry point is `run_mvp.py` which launches `mvp/app.py`.
 
 ## Requirements
 
@@ -38,13 +38,13 @@ chmod +x scripts/build_mvp_linux.sh
 ./scripts/build_mvp_linux.sh --onefile  # single-file build
 ```
 
-Artifacts will be created under `dist/geosetter-mvp/` (folder build) or `dist/geosetter-mvp` (onefile).
+Artifacts will be created under `dist/leosetter/` (folder build) or `dist/leosetter` (onefile).
 
 Run it:
 ```
-./dist/geosetter-mvp/geosetter-mvp   # folder build
+./dist/leosetter/leosetter   # folder build
 # or
-./dist/geosetter-mvp                 # onefile build
+./dist/leosetter                 # onefile build
 ```
 
 ## Quick Start (Windows)
@@ -55,7 +55,7 @@ scripts\build_mvp_windows.bat              REM folder build
 scripts\build_mvp_windows.bat --onefile    REM single-file build
 ```
 
-Artifacts will be in `dist\geosetter-mvp\` (folder build) or `dist\geosetter-mvp.exe` (onefile).
+Artifacts will be in `dist\leosetter\` (folder build) or `dist\leosetter.exe` (onefile).
 
 ## Adding icons (optional)
 

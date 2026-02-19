@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import (
     QAction,
     QApplication,
     QFileDialog,
+    QDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -37,7 +38,7 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".tif", ".tiff", ".png", ".webp"}
 class MVPWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("PyGeoSetter MVP")
+        self.setWindowTitle("LeoSetter")
         self.resize(1200, 700)
 
         self.settings = QSettings("PyGeoSetter", "MVP")
@@ -46,26 +47,20 @@ class MVPWindow(QMainWindow):
         # Staging area for batch operations before saving to disk
         self.pending_changes: Dict[str, Dict[str, str]] = {}
         # Write mode: when True, pass inplace to backend (overwrite original, no backup)
-        self.overwrite_no_backup: bool = False
+        self.overwrite_no_backup: bool = True
 
         # Actions (with shortcuts similar to GeoSetter)
         self.open_folder_action = QAction("Open Folder...", self)
         self.open_folder_action.setShortcut("Ctrl+O")
         self.open_folder_action.triggered.connect(self.open_folder)
 
-        self.save_current_action = QAction("Save Current", self)
-        self.save_current_action.setShortcut("Ctrl+S")
-        self.save_current_action.triggered.connect(self.save_current)
-
         # Save All staged changes
         self.save_all_action = QAction("Save All", self)
-        # Shortcut optional; leaving unset per simplicity
+        # Per request: Ctrl+S
+        self.save_all_action.setShortcut("Ctrl+S")
         self.save_all_action.triggered.connect(self.save_all)
 
-        self.apply_all_action = QAction("Apply To All", self)
-        self.apply_all_action.triggered.connect(self.apply_to_all)
-
-        self.clear_selected_action = QAction("Clear Selected Fields (Batch)", self)
+        self.clear_selected_action = QAction("Clear All", self)
         # Shortcut removed per user request
         self.clear_selected_action.triggered.connect(self.clear_selected_fields_batch)
 
@@ -83,25 +78,29 @@ class MVPWindow(QMainWindow):
 
         # Batch: Use Filenames for Title/Subject/Comments
         self.use_filenames_action = QAction("Use Filenames (Title/Subject/Comments)", self)
+        # Per request: Ctrl+F
+        self.use_filenames_action.setShortcut("Ctrl+F")
         self.use_filenames_action.triggered.connect(self.apply_filenames_to_all)
 
         # Batch: Set Tags for all images
         self.set_tags_action = QAction("Set Tags For All…", self)
+        # Using Ctrl+T as per user request
+        self.set_tags_action.setShortcut("Ctrl+T")
         self.set_tags_action.triggered.connect(self.set_tags_for_all)
 
         # Settings: overwrite original (no backup)
         self.overwrite_action = QAction("Overwrite original (no backup)", self)
         self.overwrite_action.setCheckable(True)
-        self.overwrite_action.setChecked(False)
+        self.overwrite_action.setChecked(True)
+        # Per request: Ctrl+Shift+O
+        self.overwrite_action.setShortcut("Ctrl+Shift+O")
         self.overwrite_action.toggled.connect(self._toggle_overwrite)
 
         # Menu
         m_file = self.menuBar().addMenu("&File")
         m_file.addAction(self.open_folder_action)
         m_file.addSeparator()
-        m_file.addAction(self.save_current_action)
         m_file.addAction(self.save_all_action)
-        m_file.addAction(self.apply_all_action)
         m_file.addSeparator()
         m_file.addAction(self.clear_selected_action)
         m_file.addAction(self.use_filenames_action)
@@ -117,8 +116,12 @@ class MVPWindow(QMainWindow):
         m_templates = self.menuBar().addMenu("&Templates")
         # Template actions in the menu
         self.act_save_template = QAction("Save Template…", self)
+        # Changed to 'C' as per user request
+        self.act_save_template.setShortcut("C")
         self.act_save_template.triggered.connect(self.save_template_dialog)
         self.act_apply_template = QAction("Apply Template (Skip Keywords)", self)
+        # Per request: Ctrl+E
+        self.act_apply_template.setShortcut("Ctrl+E")
         self.act_apply_template.triggered.connect(self.apply_template_dialog)
         self.act_manage_templates = QAction("Manage Templates…", self)
         self.act_manage_templates.triggered.connect(self.manage_templates_dialog)
@@ -137,11 +140,10 @@ class MVPWindow(QMainWindow):
 
         # Main toolbar with common actions
         main_tb = self.addToolBar("Main")
-        main_tb.addAction(self.open_folder_action)
-        main_tb.addAction(self.save_current_action)
-        main_tb.addAction(self.save_all_action)
-        main_tb.addAction(self.apply_all_action)
-        main_tb.addAction(self.clear_selected_action)
+        # Per request: remove Open Folder and Clear from toolbar; remove Save Current / Apply To All
+        # Add Use Filenames and Set Tags buttons to toolbar
+        main_tb.addAction(self.use_filenames_action)
+        main_tb.addAction(self.set_tags_action)
         main_tb.addSeparator()
         main_tb.addAction(self.select_all_action)
         main_tb.addAction(self.refresh_action)
@@ -223,21 +225,16 @@ class MVPWindow(QMainWindow):
 
         right_layout.addWidget(form_group)
 
-        # Buttons
+        # Buttons (bottom-right): Save All and Clear All (in this order)
         button_bar = QHBoxLayout()
-        self.btn_save_current = QPushButton("Save Current")
-        self.btn_save_current.clicked.connect(self.save_current)
-        self.btn_apply_all = QPushButton("Apply To All")
-        self.btn_apply_all.clicked.connect(lambda: self.apply_to_all(skip_keywords=False))
-        self.btn_clear = QPushButton("Clear Selected Fields (Batch)")
-        self.btn_clear.clicked.connect(self.clear_selected_fields_batch)
+        self.btn_save_all = QPushButton("Save All")
+        self.btn_save_all.clicked.connect(self.save_all)
+        self.btn_clear_all = QPushButton("Clear All")
+        self.btn_clear_all.clicked.connect(self.clear_selected_fields_batch)
 
-        # Template buttons moved to the top navbar (menu + toolbar)
-
-        button_bar.addWidget(self.btn_save_current)
-        button_bar.addWidget(self.btn_apply_all)
-        button_bar.addWidget(self.btn_clear)
-        # Template buttons removed from here
+        button_bar.addStretch(1)
+        button_bar.addWidget(self.btn_save_all)
+        button_bar.addWidget(self.btn_clear_all)
 
         right_layout.addLayout(button_bar)
         splitter.addWidget(right)
@@ -297,10 +294,42 @@ class MVPWindow(QMainWindow):
 
     # Folder & files
     def open_folder(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Select Folder", self.current_folder or os.path.expanduser("~"))
-        if not folder:
-            return
-        self.load_folder(folder)
+        class CustomFileDialog(QFileDialog):
+            def keyPressEvent(self, event):
+                if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
+                    # Get the current directory and selected items
+                    current_dir = self.directory().absolutePath()
+                    selected = self.selectedFiles()
+                    
+                    # If a directory is selected, navigate into it
+                    if selected and os.path.isdir(selected[0]) and selected[0] != current_dir:
+                        self.setDirectory(selected[0])
+                        return
+                    
+                    # If we're in a directory with no subdirectories, accept the current directory
+                    has_subdirs = any(os.path.isdir(os.path.join(current_dir, d)) 
+                                   for d in os.listdir(current_dir) if not d.startswith('.'))
+                    
+                    if not has_subdirs:
+                        self.accept()
+                        return
+                
+                # Default behavior for other keys
+                super().keyPressEvent(event)
+        
+        # Create and configure the dialog
+        dialog = CustomFileDialog()
+        dialog.setFileMode(QFileDialog.Directory)
+        dialog.setOption(QFileDialog.ShowDirsOnly, True)
+        dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+        dialog.setWindowTitle("Select Folder")
+        dialog.setDirectory(self.current_folder or os.path.expanduser("~"))
+        
+        # Connect the dialog's accepted signal
+        if dialog.exec_() == QDialog.Accepted:
+            folder = dialog.selectedFiles()[0] if dialog.selectedFiles() else dialog.directory().absolutePath()
+            if os.path.isdir(folder):
+                self.load_folder(folder)
 
     def load_folder(self, folder: str) -> None:
         if not xb.ensure_exiftool_available():
@@ -353,6 +382,7 @@ class MVPWindow(QMainWindow):
             "Use Filenames",
             "Set Title, Subject, and Comments to each image's filename for ALL images in this folder?",
             QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes
         ) != QMessageBox.Yes:
             return
         # Stage changes only; do not write yet
@@ -435,6 +465,7 @@ class MVPWindow(QMainWindow):
                 "Clear All?",
                 "No fields typed. Clear ALL supported fields in batch?",
                 QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
             ) != QMessageBox.Yes:
                 return
             # Clear all known fields
@@ -511,6 +542,7 @@ class MVPWindow(QMainWindow):
             "Apply",
             "Apply template to all images now (Keywords excluded)?",
             QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes
         ) == QMessageBox.Yes:
             # Stage template payload for all (excluding protected fields); do not write yet
             batch_payload = self.payload_from_form()
@@ -523,35 +555,83 @@ class MVPWindow(QMainWindow):
             self.refresh_item_markers()
 
     def manage_templates_dialog(self) -> None:
-        self.refresh_templates()
-        if not self.templates:
-            QMessageBox.information(self, "Templates", "No templates saved yet.")
-            return
-        names = sorted(self.templates.keys())
-        key, ok = QInputDialog.getItem(self, "Manage Templates", "Select template:", names, 0, False)
-        if not ok or not key:
-            return
-        action = QMessageBox.question(
-            self,
-            "Manage",
-            f"Rename or Delete template '{key}'?",
-            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
-        )
-        # We will treat Yes as Rename, No as Delete to keep it simple
-        if action == QMessageBox.Yes:
-            new_name, ok2 = QInputDialog.getText(self, "Rename Template", "New name:", text=key)
-            if not ok2 or not new_name.strip():
+        while True:  # Keep showing the dialog until user cancels
+            self.refresh_templates()
+            if not self.templates:
+                QMessageBox.information(self, "Templates", "No templates saved yet.")
                 return
-            new_key = new_name.strip()
-            if new_key != key:
-                self.templates[new_key] = self.templates.pop(key)
-                xb.save_templates(self.templates)
-                QMessageBox.information(self, "Templates", f"Renamed to '{new_key}'.")
-        elif action == QMessageBox.No:
-            if QMessageBox.question(self, "Confirm Delete", f"Delete template '{key}'?", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
-                self.templates.pop(key, None)
-                xb.save_templates(self.templates)
-                QMessageBox.information(self, "Templates", "Template deleted.")
+                
+            names = sorted(self.templates.keys())
+            key, ok = QInputDialog.getItem(
+                self, 
+                "Manage Templates", 
+                "Select template (Cancel to exit):", 
+                names, 
+                0,  # Default to first item
+                False  # Not editable
+            )
+            
+            if not ok or not key:
+                return  # User cancelled
+                
+            action = QMessageBox.question(
+                self,
+                "Manage Template",
+                f"What would you like to do with template '{key}'?\n\n"
+                "Click 'Yes' to rename, 'No' to delete, or 'Cancel' to go back.",
+                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+                QMessageBox.Yes  # Default to Yes
+            )
+            
+            if action == QMessageBox.Yes:  # Rename
+                while True:  # Keep asking for new name until valid or cancelled
+                    new_name, ok2 = QInputDialog.getText(
+                        self, 
+                        "Rename Template", 
+                        f"Rename '{key}' to:",
+                        text=key
+                    )
+                    if not ok2:  # User cancelled
+                        break
+                        
+                    new_name = new_name.strip()
+                    if not new_name:
+                        QMessageBox.warning(self, "Error", "Template name cannot be empty.")
+                        continue
+                        
+                    if new_name == key:
+                        break  # No change
+                        
+                    if new_name in self.templates:
+                        QMessageBox.warning(self, "Error", f"A template named '{new_name}' already exists.")
+                        continue
+                        
+                    # Perform the rename
+                    self.templates[new_name] = self.templates.pop(key)
+                    xb.save_templates(self.templates)
+                    QMessageBox.information(self, "Success", f"Template renamed to '{new_name}'.")
+                    break  # Exit rename loop
+                    
+            elif action == QMessageBox.No:  # Delete
+                confirm = QMessageBox.question(
+                    self,
+                    "Confirm Delete",
+                    f"Are you sure you want to delete the template '{key}'?\nThis cannot be undone.",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes  # Default to Yes
+                )
+                
+                if confirm == QMessageBox.Yes:
+                    self.templates.pop(key, None)
+                    xb.save_templates(self.templates)
+                    QMessageBox.information(self, "Success", "Template deleted.")
+                    
+                    # If no more templates, exit management
+                    if not self.templates:
+                        return
+            else:
+                # User clicked Cancel, show the list again
+                continue
 
     def closeEvent(self, event):
         if self.current_folder:

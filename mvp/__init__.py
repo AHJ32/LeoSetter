@@ -1,1 +1,1 @@
-# Minimal MVP package for a clean GeoSetter-like clone
+# Minimal MVP package for LeoSetter - a clean metadata editor

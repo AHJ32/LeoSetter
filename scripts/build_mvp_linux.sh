@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build GeoSetter MVP executable for Linux using PyInstaller
+# Build LeoSetter MVP executable for Linux using PyInstaller
 # Usage: ./scripts/build_mvp_linux.sh [--onefile]
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
@@ -21,11 +21,33 @@ fi
 "$PIP" install --upgrade pip setuptools wheel >/dev/null
 "$PIP" install pyinstaller >/dev/null
 
-NAME="geosetter-mvp"
+NAME="leosetter"
 ENTRY="run_mvp.py"
 ADDDATA=(
   "mvp/templates/templates.json:mvp/templates"
 )
+
+# Optionally bundle exiftool if present. This makes the app more self-contained.
+# Requirements: perl must exist on the target system (usually true on Linux).
+BUNDLE_FLAG="${BUNDLE_EXIFTOOL:-}"
+if [[ -z "$BUNDLE_FLAG" && -x "/usr/bin/exiftool" ]]; then
+  # Auto-enable if system exiftool exists
+  BUNDLE_FLAG=1
+fi
+
+if [[ "${BUNDLE_FLAG}" == "1" ]]; then
+  mkdir -p mvp/tools
+  if [[ -x "/usr/bin/exiftool" ]]; then
+    cp -f /usr/bin/exiftool mvp/tools/exiftool
+    chmod +x mvp/tools/exiftool
+    echo "[i] Bundling /usr/bin/exiftool into the build"
+  elif [[ -x "mvp/tools/exiftool" ]]; then
+    echo "[i] Found existing mvp/tools/exiftool; bundling it"
+  else
+    echo "[!] BUNDLE_EXIFTOOL=1 requested, but exiftool not found. Skipping bundle."
+    BUNDLE_FLAG=""
+  fi
+fi
 
 # Compose --add-data flags for Linux (src:dest)
 ADD_FLAGS=()
@@ -44,10 +66,22 @@ if [[ "${1:-}" == "--onefile" ]]; then
   FLAGS+=(--onefile)
 fi
 
-# Clean previous build artifacts
-rm -rf build/ dist/ "$NAME.spec" || true
+# If bundling exiftool, add it as a binary to tools/
+if [[ "${BUNDLE_FLAG}" == "1" && -f "mvp/tools/exiftool" ]]; then
+  FLAGS+=(--add-binary "mvp/tools/exiftool:tools")
+fi
 
-"$PYI" "${FLAGS[@]}" "$ENTRY"
+# Clean previous build artifacts (keep spec file if it exists)
+rm -rf build/ dist/ || true
+
+# Use spec file if it exists, otherwise build from scratch
+if [[ -f "leosetter.spec" ]]; then
+  echo "[i] Using existing leosetter.spec file"
+  "$PYI" leosetter.spec
+else
+  echo "[i] No leosetter.spec found, building from scratch"
+  "$PYI" "${FLAGS[@]}" "$ENTRY"
+fi
 
 echo "[✓] Build complete. Artifacts in: dist/$NAME/ (or dist/$NAME if --onefile)."
 

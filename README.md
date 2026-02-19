@@ -1,6 +1,6 @@
-# PyGeoSetter (Linux) — Minimal MVP
+# LeoSetter — Minimal MVP
 
-A lightweight GeoSetter-like tool for Linux focused on the essentials: edit a small, practical set of metadata fields, batch apply/clear across a folder, and use templates that fill everything except keywords.
+A lightweight metadata editor focused on the essentials: edit a small, practical set of metadata fields, batch apply/clear across a folder, and use templates that fill everything except keywords.
 
 ## MVP Features
 
@@ -12,8 +12,6 @@ A lightweight GeoSetter-like tool for Linux focused on the essentials: edit a sm
 - **Batch clear**: Clear selected fields for all images (or clear all supported fields if you confirm)
 - **Templates**: Save current form as a template and apply templates (keywords are excluded on apply)
 - **Image formats**: JPEG, TIFF, PNG, WEBP (and others supported by `exiftool`)
-
-The older, feature-heavy prototype under `pygeosetter/` is considered legacy. See `pygeosetter/LEGACY.md` for details.
 
 ## Installation
 
@@ -29,8 +27,8 @@ The older, feature-heavy prototype under `pygeosetter/` is considered legacy. Se
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/pygeosetter.git
-   cd pygeosetter
+   git clone https://github.com/yourusername/leosetter.git
+   cd leosetter
    ```
 
 2. Create and activate a virtual environment (recommended):
@@ -47,12 +45,18 @@ The older, feature-heavy prototype under `pygeosetter/` is considered legacy. Se
 
 ## Usage
 
-### Running the Application (MVP)
+### Running the Application (from source)
 
 To start the minimal app:
 
 ```bash
 python run_mvp.py
+```
+
+Alternatively, you can use the CLI alias installed by setup.py:
+
+```bash
+leosetter
 ```
 
 ### Basic Operations

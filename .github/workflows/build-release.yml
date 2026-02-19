@@ -1,0 +1,123 @@
+name: Build and Release LeoSetter
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+          sudo apt-get update
+          sudo apt-get install -y libimage-exiftool-perl
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Prepare bundled exiftool (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Download exiftool for Windows and place it under tools/exiftool.exe
+          $url = "https://exiftool.org/exiftool-13.00_64.zip"
+          Invoke-WebRequest -Uri $url -OutFile exiftool.zip
+          Expand-Archive exiftool.zip -DestinationPath exiftool_zip
+          $exe = Get-ChildItem -Path exiftool_zip -Recurse -Filter "exiftool(-k).exe" | Select-Object -First 1
+          New-Item -ItemType Directory -Force -Path mvp/tools | Out-Null
+          Copy-Item $exe.FullName mvp/tools/exiftool.exe -Force
+
+      - name: Build (Linux) - onefile
+        if: runner.os == 'Linux'
+        run: |
+          pyinstaller --onefile --name leosetter --noconsole --clean \
+            --add-data "mvp/templates/templates.json:mvp/templates" \
+            run_mvp.py
+
+      - name: Build (Linux) - folder
+        if: runner.os == 'Linux'
+        run: |
+          pyinstaller --name leosetter --noconsole --clean \
+            --add-data "mvp/templates/templates.json:mvp/templates" \
+            run_mvp.py
+
+      - name: Build (Windows) - onefile
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          pyinstaller --onefile --name leosetter --noconsole --clean \
+            --add-data "mvp\templates\templates.json;mvp\templates" \
+            --add-binary "mvp\tools\exiftool.exe;tools" \
+            run_mvp.py
+
+      - name: Build (Windows) - folder
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          pyinstaller --name leosetter --noconsole --clean \
+            --add-data "mvp\templates\templates.json;mvp\templates" \
+            --add-binary "mvp\tools\exiftool.exe;tools" \
+            run_mvp.py
+
+      - name: Upload artifacts (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: leosetter-linux
+          path: |
+            dist/leosetter
+            dist/leosetter/**
+
+      - name: Upload artifacts (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: leosetter-windows
+          path: |
+            dist/leosetter.exe
+            dist/leosetter/**
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: false
+          files: |
+            artifacts/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

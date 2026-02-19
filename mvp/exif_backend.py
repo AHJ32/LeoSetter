@@ -157,12 +157,9 @@ def _tag_assignments(payload: Dict[str, str], skip_keywords: bool = False) -> Li
             for tag in target_tags:
                 if not parts:
                     args.append(f"-{tag}=")
-                elif tag.endswith("XPKeywords"):
-                    # Windows expects semicolon-separated keywords
-                    args.append(f"-{tag}={'; '.join(parts)}")
                 else:
-                    for part in parts:
-                        args.append(f"-{tag}={part}")
+                    # Always use comma-separated values for consistency
+                    args.append(f"-{tag}={', '.join(parts)}")
         else:
             for tag in target_tags:
                 args.append(f"-{tag}={value}")

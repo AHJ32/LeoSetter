@@ -15,8 +15,8 @@ def main():
     try:
         QCoreApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
         app = QApplication(sys.argv)
-        app.setApplicationName("PyGeoSetter MVP")
-        app.setOrganizationName("PyGeoSetter")
+        app.setApplicationName("LeoSetter")
+        app.setOrganizationName("LeoSetter")
 
         from mvp.app import MVPWindow
         win = MVPWindow()
