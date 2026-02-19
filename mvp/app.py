@@ -1,6 +1,6 @@
 import os
 from typing import Dict, List
-from PyQt5.QtCore import Qt, QSettings
+from PyQt5.QtCore import Qt, QSettings, QThread, pyqtSignal
 from PyQt5.QtWidgets import (
     QAction,
     QApplication,
@@ -33,6 +33,62 @@ from .map_picker import MapPickerDialog
 
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".tif", ".tiff", ".png", ".webp"}
+
+
+class ExifWorker(QThread):
+    finished = pyqtSignal(dict)
+    error = pyqtSignal(str)
+    progress = pyqtSignal(int, int)
+
+    def __init__(self, mode: str, path_or_paths, payload=None, clear_fields=None, skip_keywords=False, inplace=False):
+        super().__init__()
+        self.mode = mode
+        self.path_or_paths = path_or_paths
+        self.payload = payload
+        self.clear_fields = clear_fields
+        self.skip_keywords = skip_keywords
+        self.inplace = inplace
+
+    def run(self):
+        try:
+            if self.mode == 'read':
+                data = xb.read_metadata(self.path_or_paths) or {}
+                self.finished.emit(data)
+            elif self.mode == 'write':
+                xb.write_metadata(self.path_or_paths, self.payload, skip_keywords=self.skip_keywords, inplace=self.inplace)
+                self.finished.emit({"success": True})
+            elif self.mode == 'batch_apply':
+                total = len(self.path_or_paths)
+                errors = []
+                for i, p in enumerate(self.path_or_paths):
+                    try:
+                        xb.write_metadata(p, self.payload, skip_keywords=self.skip_keywords, inplace=self.inplace)
+                    except Exception as ex:
+                        errors.append(f"{os.path.basename(p)}: {ex}")
+                    self.progress.emit(i + 1, total)
+                self.finished.emit({"success": True, "errors": errors, "total": total - len(errors)})
+            elif self.mode == 'batch_clear':
+                total = len(self.path_or_paths)
+                errors = []
+                for i, p in enumerate(self.path_or_paths):
+                    try:
+                        xb.clear_metadata(p, self.clear_fields, inplace=self.inplace)
+                    except Exception as ex:
+                        errors.append(f"{os.path.basename(p)}: {ex}")
+                    self.progress.emit(i + 1, total)
+                self.finished.emit({"success": True, "errors": errors, "total": total - len(errors)})
+            elif self.mode == 'save_all':
+                total = len(self.payload)
+                errors = []
+                for i, (p, p_payload) in enumerate(self.payload.items()):
+                    try:
+                        xb.write_metadata(p, p_payload, skip_keywords=self.skip_keywords, inplace=self.inplace)
+                    except Exception as ex:
+                        errors.append(f"{os.path.basename(p)}: {ex}")
+                    self.progress.emit(i + 1, total)
+                self.finished.emit({"success": True, "errors": errors, "total": total - len(errors)})
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class MVPWindow(QMainWindow):
@@ -361,16 +417,26 @@ class MVPWindow(QMainWindow):
         path = self.current_path()
         if not path:
             return
-        try:
-            data = xb.read_metadata(path)
-            # Overlay staged changes if present for this file
-            staged = self.pending_changes.get(path)
-            if staged:
-                data = {**data, **staged}
-            self.set_form(data)
-            self.statusBar().showMessage(f"Loaded metadata: {os.path.basename(path)}", 2000)
-        except Exception as e:
-            QMessageBox.warning(self, "Read Error", str(e))
+        self.statusBar().showMessage(f"Loading metadata: {os.path.basename(path)}...", 2000)
+        self.centralWidget().setEnabled(False)
+        self._worker = ExifWorker(mode='read', path_or_paths=path)
+        self._worker.finished.connect(lambda data: self._on_read_finished(data, path))
+        self._worker.error.connect(self._on_worker_error)
+        self._worker.start()
+
+    def _on_read_finished(self, data: dict, path: str) -> None:
+        self.centralWidget().setEnabled(True)
+        # Overlay staged changes if present for this file
+        staged = self.pending_changes.get(path)
+        if staged:
+            data = {**data, **staged}
+        self.set_form(data)
+        self.statusBar().showMessage(f"Loaded metadata: {os.path.basename(path)}", 2000)
+
+    def _on_worker_error(self, err_msg: str) -> None:
+        self.centralWidget().setEnabled(True)
+        QMessageBox.warning(self, "Error", err_msg)
+        self.statusBar().showMessage("Operation failed.", 2000)
 
     def apply_filenames_to_all(self) -> None:
         if not self.images:
@@ -416,24 +482,50 @@ class MVPWindow(QMainWindow):
         if not path:
             QMessageBox.information(self, "No selection", "Select a file first.")
             return
-        try:
-            xb.write_metadata(path, self.payload_from_form(), skip_keywords=False, inplace=self.overwrite_no_backup)
-            QMessageBox.information(self, "Saved", "Metadata written (a copy file may be created by exiftool).")
-            self.statusBar().showMessage("Saved current image", 2000)
-        except Exception as e:
-            QMessageBox.critical(self, "Write Error", str(e))
+        self.centralWidget().setEnabled(False)
+        self.statusBar().showMessage("Saving current image...")
+        self._worker = ExifWorker(
+            mode='write',
+            path_or_paths=path,
+            payload=self.payload_from_form(),
+            skip_keywords=False,
+            inplace=self.overwrite_no_backup
+        )
+        self._worker.finished.connect(self._on_save_current_finished)
+        self._worker.error.connect(self._on_worker_error)
+        self._worker.start()
+
+    def _on_save_current_finished(self, res: dict) -> None:
+        self.centralWidget().setEnabled(True)
+        QMessageBox.information(self, "Saved", "Metadata written.")
+        self.statusBar().showMessage("Saved current image", 2000)
 
     def apply_to_all(self, skip_keywords: bool = False) -> None:
         if not self.images:
             QMessageBox.information(self, "No images", "Open a folder with images first.")
             return
-        payload = self.payload_from_form()
-        try:
-            xb.batch_apply(self.images, payload, skip_keywords=skip_keywords, inplace=self.overwrite_no_backup)
-            QMessageBox.information(self, "Batch", "Applied metadata to all images (copies created).")
-            self.statusBar().showMessage("Applied to all images", 3000)
-        except Exception as e:
-            QMessageBox.critical(self, "Batch Error", str(e))
+        self.centralWidget().setEnabled(False)
+        self.statusBar().showMessage(f"Applying to {len(self.images)} images...")
+        self._worker = ExifWorker(
+            mode='batch_apply',
+            path_or_paths=self.images,
+            payload=self.payload_from_form(),
+            skip_keywords=skip_keywords,
+            inplace=self.overwrite_no_backup
+        )
+        self._worker.progress.connect(lambda cur, tot: self.statusBar().showMessage(f"Applying {cur}/{tot}..."))
+        self._worker.finished.connect(self._on_apply_to_all_finished)
+        self._worker.error.connect(self._on_worker_error)
+        self._worker.start()
+
+    def _on_apply_to_all_finished(self, res: dict) -> None:
+        self.centralWidget().setEnabled(True)
+        errors = res.get("errors", [])
+        if errors:
+            QMessageBox.warning(self, "Batch", "Some files failed:\n" + "\n".join(errors[:10]))
+        else:
+            QMessageBox.information(self, "Batch", "Applied metadata to all images.")
+        self.statusBar().showMessage("Applied to all images", 3000)
 
     def clear_selected_fields_batch(self) -> None:
         if not self.images:
@@ -470,12 +562,28 @@ class MVPWindow(QMainWindow):
                 return
             # Clear all known fields
             fields = list(xb.TAG_MAP.keys())
-        try:
-            xb.batch_clear(self.images, fields, inplace=self.overwrite_no_backup)
-            QMessageBox.information(self, "Batch Clear", "Selected fields cleared for all images (in-place overwrite).")
-            self.statusBar().showMessage("Cleared selected fields for all", 3000)
-        except Exception as e:
-            QMessageBox.critical(self, "Batch Clear Error", str(e))
+        
+        self.centralWidget().setEnabled(False)
+        self.statusBar().showMessage(f"Clearing fields for {len(self.images)} images...")
+        self._worker = ExifWorker(
+            mode='batch_clear',
+            path_or_paths=self.images,
+            clear_fields=fields,
+            inplace=self.overwrite_no_backup
+        )
+        self._worker.progress.connect(lambda cur, tot: self.statusBar().showMessage(f"Clearing {cur}/{tot}..."))
+        self._worker.finished.connect(self._on_batch_clear_finished)
+        self._worker.error.connect(self._on_worker_error)
+        self._worker.start()
+
+    def _on_batch_clear_finished(self, res: dict) -> None:
+        self.centralWidget().setEnabled(True)
+        errors = res.get("errors", [])
+        if errors:
+            QMessageBox.warning(self, "Batch Clear", "Some files failed to clear:\n" + "\n".join(errors[:10]))
+        else:
+            QMessageBox.information(self, "Batch Clear", "Selected fields cleared for all images.")
+        self.statusBar().showMessage("Cleared selected fields for all", 3000)
 
     # Selection and refresh helpers
     def select_all_images(self) -> None:
@@ -648,20 +756,36 @@ class MVPWindow(QMainWindow):
         if not self.pending_changes:
             QMessageBox.information(self, "Save All", "No staged changes to save.")
             return
-        errors = []
-        total = 0
-        for p, payload in self.pending_changes.items():
-            try:
-                xb.write_metadata(p, payload, skip_keywords=False, inplace=self.overwrite_no_backup)
-                total += 1
-            except Exception as e:
-                errors.append(f"{os.path.basename(p)}: {e}")
-        self.pending_changes.clear()
+        
+        self.centralWidget().setEnabled(False)
+        self.statusBar().showMessage(f"Saving {len(self.pending_changes)} files...")
+        
+        pending_copy = dict(self.pending_changes)
+        
+        self._worker = ExifWorker(
+            mode='save_all',
+            path_or_paths=None,
+            payload=pending_copy,
+            inplace=self.overwrite_no_backup
+        )
+        self._worker.progress.connect(lambda cur, tot: self.statusBar().showMessage(f"Saving {cur}/{tot}..."))
+        self._worker.finished.connect(lambda res: self._on_save_all_finished(res, pending_copy))
+        self._worker.error.connect(self._on_worker_error)
+        self._worker.start()
+
+    def _on_save_all_finished(self, res: dict, requested: dict) -> None:
+        self.centralWidget().setEnabled(True)
+        errors = res.get("errors", [])
+        total_saved = res.get("total", 0)
+        
+        # Only clear from pending what was attempted/saved
+        for p in requested.keys():
+            self.pending_changes.pop(p, None)
+            
         if errors:
             QMessageBox.warning(self, "Save All", "Some files failed to save:\n" + "\n".join(errors[:10]))
-        QMessageBox.information(self, "Save All", f"Saved {total} file(s).")
-        self.statusBar().showMessage(f"Saved {total} file(s)", 4000)
-        # Remove highlighting after save
+        QMessageBox.information(self, "Save All", f"Saved {total_saved} file(s).")
+        self.statusBar().showMessage(f"Saved {total_saved} file(s)", 4000)
         self.refresh_item_markers()
 
     def _toggle_overwrite(self, checked: bool) -> None:
