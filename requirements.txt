@@ -1,6 +1,7 @@
-# Minimal runtime dependency for the MVP UI
-PyQt5>=5.15.0
-PyQtWebEngine>=5.15.0
+# CustomTkinter UI dependencies
+customtkinter>=5.2.0
+Pillow>=10.0.0
+darkdetect>=0.8.0
 
 # Note: exiftool is required and is installed via your OS package manager, not pip.
 # On Debian/Ubuntu/Pop!_OS:

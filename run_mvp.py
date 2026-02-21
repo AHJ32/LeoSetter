@@ -2,8 +2,7 @@
 import sys
 import os
 import logging
-from PyQt5.QtWidgets import QApplication, QMessageBox
-from PyQt5.QtCore import Qt, QCoreApplication
+import customtkinter as ctk
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
@@ -13,18 +12,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 def main():
     try:
-        QCoreApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
-        app = QApplication(sys.argv)
-        app.setApplicationName("LeoSetter")
-        app.setOrganizationName("LeoSetter")
-
-        from mvp.app import MVPWindow
-        win = MVPWindow()
-        win.show()
-        sys.exit(app.exec_())
+        ctk.set_appearance_mode("System")  # Modes: "System" (standard), "Dark", "Light"
+        ctk.set_default_color_theme("blue")  # Themes: "blue" (standard), "green", "dark-blue"
+        
+        from mvp.app import App
+        app = App()
+        app.mainloop()
     except Exception as e:
         logging.exception("Failed to start MVP:")
-        QMessageBox.critical(None, "Fatal Error", str(e))
         return 1
 
 if __name__ == "__main__":
