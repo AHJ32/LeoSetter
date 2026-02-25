@@ -13,6 +13,11 @@ from PIL import Image
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".tif", ".tiff", ".png", ".webp"}
 
+# Apply LeoSetter theme before any widget is created
+_THEME_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "leosetter_theme.json")
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme(_THEME_PATH)
+
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings.json')
 
 def load_settings() -> dict:
@@ -201,7 +206,7 @@ class App(ctk.CTk):
         self.check_inplace = ctk.CTkCheckBox(self.action_frame, text="Overwite Originals (Inplace)", variable=self.inplace_var, command=self.toggle_inplace)
         self.check_inplace.pack(side="left", padx=10)
         
-        self.btn_clear = ctk.CTkButton(self.action_frame, text="Clear All", command=self.clear_all_batch, fg_color="#FF0000", hover_color="#CC0000", text_color="white")
+        self.btn_clear = ctk.CTkButton(self.action_frame, text="Clear All", command=self.clear_all_batch, fg_color="#ef4444", hover_color="#c53030", text_color="#fafafa")
         self.btn_clear.pack(side="left", padx=10)
         
         self.btn_save_all = ctk.CTkButton(self.action_frame, text="💾 Save Changes", command=self.save_all, fg_color="#28a745", hover_color="#218838", width=140)
@@ -289,8 +294,8 @@ class App(ctk.CTk):
             btn_kwargs = {
                 "text": display_name,
                 "fg_color": "transparent",
-                "text_color": ("gray10", "gray90"),
-                "hover_color": ("gray70", "gray30"),
+                "text_color": "#fafafa",
+                "hover_color": "#27212f",
                 "anchor": "w",
                 "command": lambda p=path: self.load_image(p)
             }
@@ -305,11 +310,11 @@ class App(ctk.CTk):
     def refresh_list_colors(self):
         for path, btn in self.file_buttons.items():
             if path == self.current_image_path:
-                btn.configure(fg_color=("#3a7ebf", "#1f538d"), text_color="white")
+                btn.configure(fg_color="#e84466", text_color="#fafafa")
             elif path in self.staged_changes and self.staged_changes[path]:
-                btn.configure(fg_color=("#e0a800", "#d39e00"), text_color="white")
+                btn.configure(fg_color="#7a3b1e", text_color="#f5c07a")
             else:
-                btn.configure(fg_color="transparent", text_color=("gray10", "gray90"))
+                btn.configure(fg_color="transparent", text_color="#fafafa")
 
     def load_image(self, path):
         if self.editing_disabled:
