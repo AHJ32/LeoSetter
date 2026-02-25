@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Build LeoSetter MVP executable for Linux using PyInstaller
-# Usage: ./scripts/build_mvp_linux.sh [--onefile]
+# Usage: ./scripts/build_linux.sh [--onefile]
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$HERE"
@@ -22,9 +22,9 @@ fi
 "$PIP" install pyinstaller >/dev/null
 
 NAME="leosetter"
-ENTRY="run_mvp.py"
+ENTRY="run.py"
 ADDDATA=(
-  "mvp/templates/templates.json:mvp/templates"
+  "leosetter/templates/templates.json:leosetter/templates"
 )
 
 # Optionally bundle exiftool if present. This makes the app more self-contained.
@@ -36,13 +36,13 @@ if [[ -z "$BUNDLE_FLAG" && -x "/usr/bin/exiftool" ]]; then
 fi
 
 if [[ "${BUNDLE_FLAG}" == "1" ]]; then
-  mkdir -p mvp/tools
+  mkdir -p leosetter/tools
   if [[ -x "/usr/bin/exiftool" ]]; then
-    cp -f /usr/bin/exiftool mvp/tools/exiftool
-    chmod +x mvp/tools/exiftool
+    cp -f /usr/bin/exiftool leosetter/tools/exiftool
+    chmod +x leosetter/tools/exiftool
     echo "[i] Bundling /usr/bin/exiftool into the build"
-  elif [[ -x "mvp/tools/exiftool" ]]; then
-    echo "[i] Found existing mvp/tools/exiftool; bundling it"
+  elif [[ -x "leosetter/tools/exiftool" ]]; then
+    echo "[i] Found existing leosetter/tools/exiftool; bundling it"
   else
     echo "[!] BUNDLE_EXIFTOOL=1 requested, but exiftool not found. Skipping bundle."
     BUNDLE_FLAG=""
@@ -67,8 +67,8 @@ if [[ "${1:-}" == "--onefile" ]]; then
 fi
 
 # If bundling exiftool, add it as a binary to tools/
-if [[ "${BUNDLE_FLAG}" == "1" && -f "mvp/tools/exiftool" ]]; then
-  FLAGS+=(--add-binary "mvp/tools/exiftool:tools")
+if [[ "${BUNDLE_FLAG}" == "1" && -f "leosetter/tools/exiftool" ]]; then
+  FLAGS+=(--add-binary "leosetter/tools/exiftool:tools")
 fi
 
 # Clean previous build artifacts (keep spec file if it exists)

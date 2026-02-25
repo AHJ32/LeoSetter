@@ -1,7 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
 REM Build LeoSetter MVP executable for Windows using PyInstaller
-REM Usage: scripts\build_mvp_windows.bat [--onefile]
+REM Usage: scripts\build_windows.bat [--onefile]
 
 set HERE=%~dp0..
 cd /d "%HERE%"
@@ -15,12 +15,12 @@ call venv\Scripts\python -m pip install --upgrade pip setuptools wheel >nul
 call venv\Scripts\pip install pyinstaller >nul
 
 set NAME=leosetter
-set ENTRY=run_mvp.py
+set ENTRY=run.py
 
 REM Data paths on Windows use src;dest with semicolon
-set ADD1=mvp\templates\templates.json;mvp\templates
+set ADD1=leosetter\templates\templates.json;leosetter\templates
 REM Bundle Windows exiftool.exe into tools/ inside the app
-set ADD2=mvp\tools\exiftool.exe;tools
+set ADD2=leosetter\tools\exiftool.exe;tools
 
 set FLAGS=--name %NAME% --noconsole --clean --add-data "%ADD1%" --add-binary "%ADD2%"
 

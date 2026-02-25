@@ -2,7 +2,7 @@
 
 This guide explains how to build standalone executables for LeoSetter using PyInstaller.
 
-The entry point is `run_mvp.py` which launches `mvp/app.py`.
+The entry point is `run.py` which launches `leosetter/app.py`.
 
 ## Requirements
 
@@ -16,11 +16,11 @@ The entry point is `run_mvp.py` which launches `mvp/app.py`.
 
 ## Bundled exiftool (optional)
 
-`mvp/exif_backend.py` auto-detects a bundled exiftool at runtime when packaged.
+`leosetter/exif_backend.py` auto-detects a bundled exiftool at runtime when packaged.
 
 Search order:
 1. PyInstaller `_MEIPASS`-based `tools/exiftool.exe` (Windows) or `tools/exiftool` (Linux)
-2. `mvp/tools/exiftool(.exe)` next to the module (for dev)
+2. `leosetter/tools/exiftool(.exe)` next to the module (for dev)
 3. System `exiftool` on PATH
 
 To bundle exiftool, place it at:
@@ -33,9 +33,9 @@ Note: The provided scripts do not bundle exiftool by default; they rely on the s
 
 ```
 # From repository root
-chmod +x scripts/build_mvp_linux.sh
-./scripts/build_mvp_linux.sh            # folder build
-./scripts/build_mvp_linux.sh --onefile  # single-file build
+chmod +x scripts/build_linux.sh
+./scripts/build_linux.sh            # folder build
+./scripts/build_linux.sh --onefile  # single-file build
 ```
 
 Artifacts will be created under `dist/leosetter/` (folder build) or `dist/leosetter` (onefile).
@@ -51,8 +51,8 @@ Run it:
 
 ```
 REM From repository root
-scripts\build_mvp_windows.bat              REM folder build
-scripts\build_mvp_windows.bat --onefile    REM single-file build
+scripts\build_windows.bat              REM folder build
+scripts\build_windows.bat --onefile    REM single-file build
 ```
 
 Artifacts will be in `dist\leosetter\` (folder build) or `dist\leosetter.exe` (onefile).
@@ -65,7 +65,7 @@ Artifacts will be in `dist\leosetter\` (folder build) or `dist\leosetter.exe` (o
 ## Adding resources
 
 If you add static resources, include them via `--add-data` flags. Examples already present:
-- `mvp/templates/templates.json:mvp/templates`
+- `leosetter/templates/templates.json:leosetter/templates`
 
 Windows uses `src;dest` while Linux uses `src:dest`.
 

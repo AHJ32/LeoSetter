@@ -2,10 +2,10 @@
 
 
 a = Analysis(
-    ['run_mvp.py'],
+    ['run.py'],
     pathex=[],
-    binaries=[('mvp\\tools\\exiftool.exe', 'tools')],
-    datas=[('mvp\\templates\\templates.json', 'mvp\\templates')],
+    binaries=[('leosetter\\tools\\exiftool.exe', 'tools')],
+    datas=[('leosetter\\templates\\templates.json', 'leosetter\\templates')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

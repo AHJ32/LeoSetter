@@ -50,7 +50,7 @@ A lightweight metadata editor focused on the essentials: edit a small, practical
 To start the minimal app:
 
 ```bash
-python run_mvp.py
+python run.py
 ```
 
 Alternatively, you can use the CLI alias installed by setup.py:

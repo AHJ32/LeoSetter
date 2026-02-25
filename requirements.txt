@@ -2,6 +2,8 @@
 customtkinter>=5.2.0
 Pillow>=10.0.0
 darkdetect>=0.8.0
+tkintermapview>=1.9.3
+geopy>=2.4.1
 
 # Note: exiftool is required and is installed via your OS package manager, not pip.
 # On Debian/Ubuntu/Pop!_OS:

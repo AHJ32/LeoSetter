@@ -24,7 +24,7 @@ You will also need `exiftool` installed on your system.
 
 Currently, you can test the application simply by running it:
 ```sh
-python run_mvp.py
+python run.py
 ```
 
 *Note: Automated tests will be added in a future update.*
