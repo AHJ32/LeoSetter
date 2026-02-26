@@ -2,7 +2,7 @@ import os
 import threading
 import queue
 import customtkinter as ctk
-from tkinter import filedialog, messagebox, simpledialog
+from tkinter import filedialog
 from typing import Dict, List
 
 from . import exif_backend as xb
@@ -19,6 +19,150 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme(_THEME_PATH)
 
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings.json')
+
+# ─── Themed dialog helpers ────────────────────────────────────────────────────
+
+def _dark_titlebar(win):
+    """Force dark title bar on Windows via DWMAPI — used only for the main App window."""
+    import sys
+    if sys.platform != "win32":
+        return
+    try:
+        from ctypes import windll, byref, sizeof, c_int
+        for get in (lambda: windll.user32.GetParent(win.winfo_id()),
+                    lambda: int(win.wm_frame(), 16)):
+            try:
+                hwnd = get()
+                if hwnd:
+                    for attr in (19, 20):
+                        windll.dwmapi.DwmSetWindowAttribute(
+                            hwnd, attr, byref(c_int(1)), sizeof(c_int))
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+def _make_themed_dialog(parent, title: str, width: int, height: int):
+    """
+    Create a fully themed borderless CTkToplevel with a custom dark title bar.
+    Returns (dlg, content_frame).  The caller packs/grids widgets into content_frame.
+    """
+    dlg = ctk.CTkToplevel(parent)
+    
+    import sys
+    if sys.platform == "win32":
+        def _remove_caption():
+            try:
+                from ctypes import windll
+                hwnd = windll.user32.GetParent(dlg.winfo_id())
+                GWL_STYLE = -16
+                WS_CAPTION = 0x00C00000
+                WS_THICKFRAME = 0x00040000
+                style = windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
+                windll.user32.SetWindowLongW(hwnd, GWL_STYLE, style & ~WS_CAPTION & ~WS_THICKFRAME)
+            except Exception:
+                pass
+        dlg.after(10, _remove_caption)
+    else:
+        dlg.overrideredirect(True)
+
+    dlg.configure(fg_color="#0e0b14")
+    dlg.resizable(False, False)
+    dlg.transient(parent)
+    dlg.grab_set()
+
+    # Centre over parent
+    parent.update_idletasks()
+    x = parent.winfo_rootx() + (parent.winfo_width()  - width)  // 2
+    y = parent.winfo_rooty() + (parent.winfo_height() - height) // 2
+    dlg.geometry(f"{width}x{height}+{x}+{y}")
+
+    # ── Custom title bar ──────────────────────────────────────────────────────
+    title_bar = ctk.CTkFrame(dlg, height=36, fg_color="#1a1524", corner_radius=0)
+    title_bar.pack(fill="x", side="top")
+    title_bar.pack_propagate(False)
+
+    ctk.CTkLabel(title_bar, text=title,
+                 font=ctk.CTkFont(size=13, weight="bold"),
+                 text_color="#fafafa").pack(side="left", padx=12)
+
+    ctk.CTkButton(title_bar, text="✕", width=36, height=36,
+                  fg_color="transparent", hover_color="#ef4444",
+                  text_color="#8f8599", corner_radius=0,
+                  command=dlg.destroy).pack(side="right", padx=0)
+
+    # Dragging
+    dlg._dx = dlg._dy = 0
+    def _start(e): dlg._dx, dlg._dy = e.x_root, e.y_root
+    def _drag(e):
+        dlg.geometry(f"+{dlg.winfo_x()+e.x_root-dlg._dx}+{dlg.winfo_y()+e.y_root-dlg._dy}")
+        dlg._dx, dlg._dy = e.x_root, e.y_root
+    title_bar.bind("<ButtonPress-1>", _start)
+    title_bar.bind("<B1-Motion>",     _drag)
+
+    # Content area
+    content = ctk.CTkFrame(dlg, fg_color="#0e0b14", corner_radius=0)
+    content.pack(fill="both", expand=True)
+    return dlg, content
+
+def ask_confirm(parent, title: str, message: str) -> bool:
+    """Themed yes/no dialog. Returns True if Yes clicked."""
+    dlg, content = _make_themed_dialog(parent, title, 460, 170)
+    result = [False]
+    ctk.CTkLabel(content, text=message, wraplength=420, justify="left").pack(
+        padx=24, pady=(20, 8), anchor="w")
+    f = ctk.CTkFrame(content, fg_color="transparent")
+    f.pack(padx=24, pady=(4, 20), anchor="e")
+    def _yes(): result[0] = True; dlg.destroy()
+    ctk.CTkButton(f, text="Yes", width=80, fg_color="#e84466",
+                  hover_color="#c73858", command=_yes).pack(side="left", padx=(0, 8))
+    ctk.CTkButton(f, text="No",  width=80, command=dlg.destroy).pack(side="left")
+    parent.wait_window(dlg)
+    return result[0]
+
+def show_message(parent, title: str, message: str, error: bool = False):
+    """Themed info / error dialog."""
+    dlg, content = _make_themed_dialog(parent, title, 460, 170)
+    color = "#ef4444" if error else "#fafafa"
+    ctk.CTkLabel(content, text=message, wraplength=420, justify="left",
+                 text_color=color).pack(padx=24, pady=(20, 8), anchor="w")
+    f = ctk.CTkFrame(content, fg_color="transparent")
+    f.pack(padx=24, pady=(4, 20), anchor="e")
+    ctk.CTkButton(f, text="OK", width=80, command=dlg.destroy).pack()
+    parent.wait_window(dlg)
+
+def ask_string(parent, title: str, prompt: str) -> str:
+    """Themed text input dialog."""
+    dlg, content = _make_themed_dialog(parent, title, 460, 200)
+    result = [None]
+    
+    ctk.CTkLabel(content, text=prompt, wraplength=420, justify="left",
+                 text_color="#fafafa").pack(padx=24, pady=(20, 8), anchor="w")
+                 
+    entry = ctk.CTkEntry(content, width=412, fg_color="#27212f",
+                         border_color="#322b3c", text_color="#fafafa")
+    entry.pack(padx=24, pady=(0, 20))
+    dlg.after(150, lambda: entry.focus())
+    
+    f = ctk.CTkFrame(content, fg_color="transparent")
+    f.pack(padx=24, pady=(0, 20), anchor="e")
+    
+    def _ok(event=None):
+        result[0] = entry.get()
+        dlg.destroy()
+        
+    entry.bind("<Return>", _ok)
+    
+    ctk.CTkButton(f, text="OK", width=80, fg_color="#e84466",
+                  hover_color="#c73858", command=_ok).pack(side="left", padx=(0, 8))
+    ctk.CTkButton(f, text="Cancel", width=80, command=dlg.destroy).pack(side="left")
+    
+    parent.wait_window(dlg)
+    return result[0]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+
 
 def load_settings() -> dict:
     if os.path.exists(SETTINGS_FILE):
@@ -102,7 +246,11 @@ class App(ctk.CTk):
         super().__init__()
         
         self.title("LeoSetter")
-        
+        self.after(150, lambda: _dark_titlebar(self))
+        _blank_ico = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "blank.ico")
+        self.after(200, lambda: self.iconbitmap(_blank_ico))
+        self.after(350, lambda: _dark_titlebar(self))
+
         # Load Settings
         self.settings = load_settings()
         geom = self.settings.get("geometry", "800x600")
@@ -160,8 +308,7 @@ class App(ctk.CTk):
         
         self.btn_map = ctk.CTkButton(self.toolbar, text="🗺️ Pick from Map", command=self.pick_on_map, width=130)
         self.btn_map.pack(side="left", padx=5, pady=10)
-        
-        
+
         # Sidebar
         self.sidebar = ctk.CTkFrame(self, width=450, corner_radius=0)
         self.sidebar.grid(row=1, column=0, sticky="ns")
@@ -322,7 +469,7 @@ class App(ctk.CTk):
         self.current_image_path = path
         self.refresh_list_colors()
         self.status_var.set(f"Loading metadata for {os.path.basename(path)}...")
-        self.set_ui_state("disabled")
+        self.set_ui_state("disabled", visual=False)
         worker = ExifWorker('read', path, self.worker_callback)
         worker.start()
         
@@ -357,9 +504,8 @@ class App(ctk.CTk):
 
     def set_tags_for_all(self):
         if not self.image_files: return
-        dialog = ctk.CTkInputDialog(text="Enter tags separated by commas:", title="Set Tags")
-        tags = dialog.get_input()
-        if not tags: return
+        tags = ask_string(self, "Set Tags", "Enter tags separated by commas:")
+        if tags is None: return
         
         self._is_populating = True
         for path in self.image_files:
@@ -384,7 +530,8 @@ class App(ctk.CTk):
 
     def clear_all_batch(self):
         if not self.image_files: return
-        if not messagebox.askyesno("Clear All Fields", "Are you sure you want to clear ALL metadata fields from ALL images? This cannot be undone."):
+        if not ask_confirm(self, "Clear All Fields",
+                           "Are you sure you want to clear ALL metadata fields from ALL images?\nThis cannot be undone."):
             return
 
         fields = list(self.form_vars.keys())
@@ -425,10 +572,10 @@ class App(ctk.CTk):
             while True:
                 res = self.queue.get_nowait()
                 if res['status'] == 'error':
-                    messagebox.showerror("Error", res['message'])
+                    show_message(self, "Error", res['message'], error=True)
                     self.status_var.set("Error occurred.")
                     self.progress_bar.grid_remove()
-                    self.set_ui_state("normal")
+                    self.set_ui_state("normal", visual=(res.get('mode') != 'read'))
                 elif res['status'] == 'progress':
                     self.status_var.set(f"Processing {res['current']}/{res['total']}...")
                     if not self.progress_bar.winfo_viewable():
@@ -452,7 +599,7 @@ class App(ctk.CTk):
                         self.staged_changes.clear()
                         self.refresh_list_colors()
                         self.status_var.set("Saved all changes successfully!")
-                    self.set_ui_state("normal")
+                    self.set_ui_state("normal", visual=(res['mode'] != 'read'))
         except queue.Empty:
             pass
         finally:
@@ -469,13 +616,14 @@ class App(ctk.CTk):
             var.set(val)
         self._is_populating = False
 
-    def set_ui_state(self, state):
+    def set_ui_state(self, state, visual=True):
         self.editing_disabled = (state == "disabled")
-        for btn in [self.btn_open, self.btn_filenames, self.btn_tags, self.btn_save_all,
-                    self.btn_clear, self.btn_map,
-                    self.btn_save_template, self.btn_apply_template, self.btn_manage_templates,
-                    self.check_inplace]:
-            btn.configure(state=state)
+        if visual:
+            for btn in [self.btn_open, self.btn_filenames, self.btn_tags, self.btn_save_all,
+                        self.btn_clear, self.btn_map,
+                        self.btn_save_template, self.btn_apply_template, self.btn_manage_templates,
+                        self.check_inplace]:
+                btn.configure(state=state)
 
     def pick_on_map(self):
         lat_str = self.form_vars.get("GPSLatitude", ctk.StringVar()).get()
@@ -504,11 +652,11 @@ class App(ctk.CTk):
         self.inplace_mode = self.inplace_var.get()
 
     def save_template_dialog(self):
-        name = simpledialog.askstring("Save Template", "Template Name:", parent=self)
+        name = ask_string(self, "Save Template", "Enter template name:")
         if not name: return
         payload = self.current_payload()
         if not payload:
-            messagebox.showinfo("Error", "No non-empty fields to save.")
+            show_message(self, "Error", "No non-empty fields to save.", error=True)
             return
         templates = xb.load_templates()
         templates[name] = payload
@@ -518,18 +666,14 @@ class App(ctk.CTk):
     def apply_template_dialog(self):
         templates = xb.load_templates()
         if not templates:
-            messagebox.showinfo("Templates", "No templates found.")
+            show_message(self, "Templates", "No templates found.")
             return
         
-        dlg = ctk.CTkToplevel(self)
-        dlg.title("Apply Template")
-        dlg.geometry("300x400")
-        dlg.transient(self)
-        dlg.grab_set()
+        dlg, dlg_content = _make_themed_dialog(self, "Apply Template", 300, 420)
 
-        ctk.CTkLabel(dlg, text="Select a template:").pack(pady=10)
+        ctk.CTkLabel(dlg_content, text="Select a template:").pack(pady=10)
         
-        listbox = ctk.CTkScrollableFrame(dlg)
+        listbox = ctk.CTkScrollableFrame(dlg_content)
         listbox.pack(fill="both", expand=True, padx=10, pady=5)
         
         selected_var = ctk.StringVar()
@@ -560,23 +704,19 @@ class App(ctk.CTk):
                 self.status_var.set(f"Applied template '{tname}' to all images.")
                 dlg.destroy()
                 
-        ctk.CTkButton(dlg, text="Apply", command=on_apply).pack(pady=10)
+        ctk.CTkButton(dlg_content, text="Apply", command=on_apply).pack(pady=10)
 
     def manage_templates_dialog(self):
         templates = xb.load_templates()
         if not templates:
-            messagebox.showinfo("Templates", "No templates found.")
+            show_message(self, "Templates", "No templates found.")
             return
             
-        dlg = ctk.CTkToplevel(self)
-        dlg.title("Manage Templates")
-        dlg.geometry("400x400")
-        dlg.transient(self)
-        dlg.grab_set()
+        dlg, dlg_content = _make_themed_dialog(self, "Manage Templates", 400, 420)
         
-        ctk.CTkLabel(dlg, text="Existing templates:").pack(pady=10)
+        ctk.CTkLabel(dlg_content, text="Existing templates:").pack(pady=10)
         
-        listbox = ctk.CTkScrollableFrame(dlg)
+        listbox = ctk.CTkScrollableFrame(dlg_content)
         listbox.pack(fill="both", expand=True, padx=10, pady=5)
         
         for tname in list(templates.keys()):
@@ -588,7 +728,7 @@ class App(ctk.CTk):
                 xb.save_templates(templates)
                 f.destroy()
                 self.status_var.set(f"Deleted template '{n}'.")
-            ctk.CTkButton(frame, text="Delete", fg_color="#dc3545", hover_color="#c82333", width=60, command=delete_t).pack(side="right")
+            ctk.CTkButton(frame, text="Delete", fg_color="#ef4444", hover_color="#c53030", text_color="#fafafa", width=60, command=delete_t).pack(side="right")
             
     def on_closing(self):
         self.settings["geometry"] = self.geometry()

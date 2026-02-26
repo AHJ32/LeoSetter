@@ -1,17 +1,77 @@
 import customtkinter as ctk
 import tkintermapview
-from tkinter import messagebox
 
-class MapPickerDialog(ctk.CTkToplevel):
-    def __init__(self, parent=None, start_lat: float = 0.0, start_lon: float = 0.0):
-        super().__init__(parent)
-        self.title("Pick Location on Map")
-        self.geometry("900x600")
-        
-        # Make it modal if parent is provided
-        if parent:
-            self.transient(parent)
-            self.grab_set()
+def _make_themed_dialog(parent, title: str, width: int, height: int):
+    dlg = ctk.CTkToplevel(parent)
+    
+    import sys
+    if sys.platform == "win32":
+        def _remove_caption():
+            try:
+                from ctypes import windll
+                hwnd = windll.user32.GetParent(dlg.winfo_id())
+                GWL_STYLE = -16
+                WS_CAPTION = 0x00C00000
+                WS_THICKFRAME = 0x00040000
+                style = windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
+                windll.user32.SetWindowLongW(hwnd, GWL_STYLE, style & ~WS_CAPTION & ~WS_THICKFRAME)
+            except Exception:
+                pass
+        dlg.after(10, _remove_caption)
+    else:
+        dlg.overrideredirect(True)
+
+    dlg.configure(fg_color="#0e0b14")
+    dlg.resizable(False, False)
+    dlg.transient(parent)
+    dlg.grab_set()
+
+    parent.update_idletasks()
+    x = parent.winfo_rootx() + (parent.winfo_width()  - width)  // 2
+    y = parent.winfo_rooty() + (parent.winfo_height() - height) // 2
+    dlg.geometry(f"{width}x{height}+{x}+{y}")
+
+    title_bar = ctk.CTkFrame(dlg, height=36, fg_color="#1a1524", corner_radius=0)
+    title_bar.pack(fill="x", side="top")
+    title_bar.pack_propagate(False)
+
+    ctk.CTkLabel(title_bar, text=title,
+                 font=ctk.CTkFont(size=13, weight="bold"),
+                 text_color="#fafafa").pack(side="left", padx=12)
+
+    ctk.CTkButton(title_bar, text="✕", width=36, height=36,
+                  fg_color="transparent", hover_color="#ef4444",
+                  text_color="#8f8599", corner_radius=0,
+                  command=dlg.destroy).pack(side="right", padx=0)
+
+    dlg._dx = dlg._dy = 0
+    def _start(e): dlg._dx, dlg._dy = e.x_root, e.y_root
+    def _drag(e):
+        dlg.geometry(f"+{dlg.winfo_x()+e.x_root-dlg._dx}+{dlg.winfo_y()+e.y_root-dlg._dy}")
+        dlg._dx, dlg._dy = e.x_root, e.y_root
+    title_bar.bind("<ButtonPress-1>", _start)
+    title_bar.bind("<B1-Motion>",     _drag)
+
+    content = ctk.CTkFrame(dlg, fg_color="#0e0b14", corner_radius=0)
+    content.pack(fill="both", expand=True)
+    return dlg, content
+
+def _show_msg(parent, title: str, message: str, error: bool = False):
+    dlg, content = _make_themed_dialog(parent, title, 420, 150)
+    color = "#ef4444" if error else "#fafafa"
+    ctk.CTkLabel(content, text=message, wraplength=380, justify="left",
+                 text_color=color).pack(padx=20, pady=(20, 8), anchor="w")
+    f = ctk.CTkFrame(content, fg_color="transparent")
+    f.pack(padx=20, pady=(4, 16), anchor="e")
+    ctk.CTkButton(f, text="OK", width=80, command=dlg.destroy).pack()
+    parent.wait_window(dlg)
+
+
+class MapPickerDialog(ctk.CTkFrame):
+    def __init__(self, top, parent_content, start_lat: float = 0.0, start_lon: float = 0.0):
+        super().__init__(parent_content, fg_color="#0e0b14", corner_radius=0)
+        self.top = top
+        self.pack(fill="both", expand=True)
 
         self.lat = None
         self.lon = None
@@ -36,8 +96,12 @@ class MapPickerDialog(ctk.CTkToplevel):
         self.btn_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.btn_frame.pack(fill="x", padx=10, pady=10)
         
-        self.btn_cancel = ctk.CTkButton(self.btn_frame, text="Cancel", command=self.cancel, width=120, fg_color="transparent", border_width=1, text_color=("gray10", "gray90"))
+        self.btn_cancel = ctk.CTkButton(self.btn_frame, text="Cancel", command=self.cancel, width=120,
+                                        fg_color="transparent", border_width=1,
+                                        border_color="#322b3c", text_color="#fafafa",
+                                        hover_color="#27212f")
         self.btn_cancel.pack(side="right", padx=5)
+
         
         self.btn_ok = ctk.CTkButton(self.btn_frame, text="Use Location", command=self.accept, width=120)
         self.btn_ok.pack(side="right", padx=5)
@@ -72,9 +136,9 @@ class MapPickerDialog(ctk.CTkToplevel):
                     self.map_widget.delete_all_marker()
                     self.set_marker(self.lat, self.lon)
                 else:
-                    messagebox.showwarning("Not Found", f"Could not find '{query}'")
+                    _show_msg(self, "Not Found", f"Could not find '{query}'")
             except Exception as e:
-                messagebox.showerror("Search Error", f"An error occurred: {str(e)}")
+                _show_msg(self, "Search Error", f"An error occurred: {str(e)}", error=True)
 
     def set_marker_from_menu(self, coords):
         self.set_marker(coords[0], coords[1])
@@ -91,23 +155,20 @@ class MapPickerDialog(ctk.CTkToplevel):
 
     def accept(self):
         if self.lat is not None and self.lon is not None:
-            self.destroy()
+            self.top.destroy()
         else:
-            messagebox.showwarning("Error", "Please select a location on the map first.")
+            _show_msg(self.top, "No Location", "Please select a location on the map first.")
             
     def cancel(self):
         self.lat = None
         self.lon = None
-        self.destroy()
-
-    @staticmethod
-    def get_location(parent=None, start_lat: float = 0.0, start_lon: float = 0.0):
-        dlg = MapPickerDialog(parent, start_lat, start_lon)
-        # Wait for dialog to close
-        if parent:
-            parent.wait_window(dlg)
-        else:
-            dlg.wait_window()
-            
-        ok = dlg.lat is not None and dlg.lon is not None
-        return (dlg.lat, dlg.lon, ok)
+        self.top.destroy()
+        
+    @classmethod
+    def get_location(cls, parent, start_lat: float = 0.0, start_lon: float = 0.0):
+        dlg, dlg_content = _make_themed_dialog(parent, "Pick Location on Map", 900, 600)
+        picker = cls(dlg, dlg_content, start_lat, start_lon)
+        parent.wait_window(dlg)
+        if picker.lat is not None and picker.lon is not None:
+            return picker.lat, picker.lon, True
+        return 0.0, 0.0, False
