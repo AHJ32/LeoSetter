@@ -26,10 +26,8 @@ a = Analysis(
     datas=[
         # ── App theme ─────────────────────────────────────────────────────────
         (os.path.join('leosetter', 'leosetter_theme.json'), 'leosetter'),
-        # ── Templates folder ──────────────────────────────────────────────────
+        # ── Empty default templates (user templates go to %APPDATA%/LeoSetter) ─
         (os.path.join('leosetter', 'templates'),            'leosetter/templates'),
-        # ── Default settings ──────────────────────────────────────────────────
-        (os.path.join('leosetter', 'settings.json'),        'leosetter'),
         # ── App icons and assets ──────────────────────────────────────────────
         (os.path.join('assets', 'LeoSetter.ico'),  'assets'),
         (os.path.join('assets', 'LeoSetter.png'),  'assets'),

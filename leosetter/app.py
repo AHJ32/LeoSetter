@@ -17,12 +17,40 @@ from PIL import Image
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".tif", ".tiff", ".png", ".webp"}
 
+
+def _resource_path(*parts: str) -> str:
+    """
+    Return the absolute path to a bundled resource.
+
+    When running as a PyInstaller frozen app, _MEIPASS is the temp folder where
+    all bundled data files are extracted.  In development, we fall back to the
+    project root (two levels above this file).
+    """
+    if getattr(sys, "frozen", False):
+        base = sys._MEIPASS  # type: ignore[attr-defined]
+    else:
+        # project root: leosetter/ -> parent
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, *parts)
+
+
+def _user_config_dir() -> str:
+    """Return a writable per-user config directory (same as exif_backend uses)."""
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA", os.path.expanduser("~"))
+    else:
+        base = os.environ.get("XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config"))
+    path = os.path.join(base, "LeoSetter")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
 # Apply LeoSetter theme before any widget is created
-_THEME_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "leosetter_theme.json")
+_THEME_PATH = _resource_path("leosetter", "leosetter_theme.json")
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme(_THEME_PATH)
 
-SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings.json')
+SETTINGS_FILE = os.path.join(_user_config_dir(), "settings.json")
 
 # ─── Themed dialog helpers ────────────────────────────────────────────────────
 
@@ -251,7 +279,7 @@ class App(ctk.CTk):
         
         self.title("LeoSetter")
         self.after(150, lambda: _dark_titlebar(self))
-        _blank_ico = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "blank.ico")
+        _blank_ico = _resource_path("assets", "blank.ico")
         self.after(200, lambda: self.iconbitmap(_blank_ico))
         self.after(350, lambda: _dark_titlebar(self))
 
