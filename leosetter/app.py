@@ -1,4 +1,6 @@
 import os
+import sys
+import webbrowser
 import threading
 import queue
 import customtkinter as ctk
@@ -7,6 +9,8 @@ from typing import Dict, List
 
 from . import exif_backend as xb
 from .map_picker import MapPickerDialog
+from .version import APP_VERSION, GITHUB_URL
+from . import updater
 
 import json
 from PIL import Image
@@ -308,6 +312,33 @@ class App(ctk.CTk):
         
         self.btn_map = ctk.CTkButton(self.toolbar, text="🗺️ Pick from Map", command=self.pick_on_map, width=130)
         self.btn_map.pack(side="left", padx=5, pady=10)
+
+        # ── Right-side toolbar icons ───────────────────────────────────────────
+        # GitHub icon — opens the repo in the browser
+        self.btn_github = ctk.CTkButton(
+            self.toolbar,
+            text="🐙",
+            width=44, height=40,
+            fg_color="transparent",
+            hover_color="#27212f",
+            corner_radius=8,
+            font=ctk.CTkFont(size=18),
+            command=lambda: webbrowser.open(GITHUB_URL),
+        )
+        self.btn_github.pack(side="right", padx=(0, 8), pady=10)
+
+        # Gear / Settings icon — opens the settings dialog
+        self.btn_settings = ctk.CTkButton(
+            self.toolbar,
+            text="⚙️",
+            width=44, height=40,
+            fg_color="transparent",
+            hover_color="#27212f",
+            corner_radius=8,
+            font=ctk.CTkFont(size=18),
+            command=self.show_settings_dialog,
+        )
+        self.btn_settings.pack(side="right", padx=(0, 4), pady=10)
 
         # Sidebar
         self.sidebar = ctk.CTkFrame(self, width=450, corner_radius=0)
@@ -624,6 +655,136 @@ class App(ctk.CTk):
                         self.btn_save_template, self.btn_apply_template, self.btn_manage_templates,
                         self.check_inplace]:
                 btn.configure(state=state)
+
+    # ── Settings / Update checker ─────────────────────────────────────────────
+
+    def show_settings_dialog(self):
+        """Open the Settings popover with version info and an update checker."""
+        dlg, content = _make_themed_dialog(self, "Settings", 400, 240)
+
+        # Version row
+        ver_row = ctk.CTkFrame(content, fg_color="transparent")
+        ver_row.pack(fill="x", padx=24, pady=(20, 4))
+        ctk.CTkLabel(ver_row, text="Version:",
+                     font=ctk.CTkFont(weight="bold"),
+                     text_color="#8f8599").pack(side="left")
+        ctk.CTkLabel(ver_row, text=f"  {APP_VERSION}",
+                     text_color="#fafafa").pack(side="left")
+
+        # Status label (reused during update check)
+        status_var = ctk.StringVar(value="")
+        status_lbl = ctk.CTkLabel(content, textvariable=status_var,
+                                  wraplength=360, text_color="#8f8599",
+                                  font=ctk.CTkFont(size=12))
+        status_lbl.pack(padx=24, pady=(0, 8), anchor="w")
+
+        # Check for Update button
+        btn_check = ctk.CTkButton(
+            content, text="🔄  Check for Update", width=180,
+            fg_color="#2d2540", hover_color="#3d3554",
+            command=lambda: self._check_for_update(status_var, btn_check, dlg),
+        )
+        btn_check.pack(padx=24, anchor="w")
+
+        # GitHub link
+        link_row = ctk.CTkFrame(content, fg_color="transparent")
+        link_row.pack(fill="x", padx=24, pady=(16, 0))
+        ctk.CTkLabel(link_row, text="GitHub:",
+                     font=ctk.CTkFont(weight="bold"),
+                     text_color="#8f8599").pack(side="left")
+        gh_btn = ctk.CTkButton(
+            link_row, text=f"  {GITHUB_URL}",
+            fg_color="transparent", hover_color="#27212f",
+            text_color="#e84466", anchor="w", font=ctk.CTkFont(size=12),
+            command=lambda: webbrowser.open(GITHUB_URL),
+        )
+        gh_btn.pack(side="left")
+
+    def _check_for_update(self, status_var: ctk.StringVar, btn: ctk.CTkButton, dlg):
+        """Run the update check in a background thread and react on the main thread."""
+        btn.configure(state="disabled", text="Checking…")
+        status_var.set("Contacting GitHub…")
+
+        def _worker():
+            try:
+                tag, exe_url = updater.fetch_latest_release()
+                if updater.is_newer(tag):
+                    # Newer version found
+                    self.after(0, lambda: self._offer_update(tag, exe_url, status_var, btn, dlg))
+                else:
+                    self.after(0, lambda: [
+                        status_var.set(f"✅  You are up to date  (v{APP_VERSION})"),
+                        btn.configure(state="normal", text="🔄  Check for Update"),
+                    ])
+            except Exception as exc:
+                msg = str(exc)
+                self.after(0, lambda: [
+                    status_var.set(f"⚠️  {msg}"),
+                    btn.configure(state="normal", text="🔄  Check for Update"),
+                ])
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _offer_update(self, tag: str, exe_url, status_var: ctk.StringVar,
+                      btn: ctk.CTkButton, settings_dlg):
+        """Show an update-available prompt and handle download + relaunch."""
+        btn.configure(state="normal", text="🔄  Check for Update")
+        status_var.set(f"🆕  New version available: {tag}")
+
+        if not exe_url:
+            # No EXE asset — just point to the releases page
+            if ask_confirm(self, "Update Available",
+                           f"Version {tag} is available.\n"
+                           "No installer asset found. Open the Releases page?"):
+                webbrowser.open(f"https://github.com/AHJ32/LeoSetter/releases/latest")
+            return
+
+        if not ask_confirm(self, "Update Available",
+                           f"Version {tag} is available.\n"
+                           "Download and install now? The app will restart automatically."):
+            return
+
+        settings_dlg.destroy()
+
+        # ── Download in background with progress ──────────────────────────────
+        prog_dlg, prog_content = _make_themed_dialog(self, "Downloading Update", 420, 160)
+        prog_var = ctk.StringVar(value="Starting download…")
+        ctk.CTkLabel(prog_content, textvariable=prog_var,
+                     wraplength=380).pack(padx=24, pady=(20, 8), anchor="w")
+        prog_bar = ctk.CTkProgressBar(prog_content, width=380, mode="determinate")
+        prog_bar.pack(padx=24, pady=(0, 16))
+        prog_bar.set(0)
+
+        def _on_progress(done, total):
+            if total > 0:
+                frac = done / total
+                pct  = int(frac * 100)
+                mb_done  = done  / (1024 * 1024)
+                mb_total = total / (1024 * 1024)
+                self.after(0, lambda f=frac, p=pct, d=mb_done, t=mb_total: [
+                    prog_bar.set(f),
+                    prog_var.set(f"Downloading… {d:.1f} MB / {t:.1f} MB  ({p}%)"),
+                ])
+
+        def _download_worker():
+            try:
+                path = updater.download_update(exe_url, progress_callback=_on_progress)
+                self.after(0, lambda: _launch(path))
+            except Exception as exc:
+                err = str(exc)
+                self.after(0, lambda: [
+                    prog_dlg.destroy(),
+                    show_message(self, "Download Failed",
+                                 f"Could not download update:\n{err}", error=True),
+                ])
+
+        def _launch(path: str):
+            prog_dlg.destroy()
+            show_message(self, "Launching Installer",
+                         "The installer will now open. LeoSetter will close.")
+            updater.launch_installer(path)
+
+        threading.Thread(target=_download_worker, daemon=True).start()
 
     def pick_on_map(self):
         lat_str = self.form_vars.get("GPSLatitude", ctk.StringVar()).get()

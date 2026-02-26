@@ -26,6 +26,11 @@ MANIFEST
 venv/
 ENV/
 env/
+.venv/
+
+# PyInstaller / Inno Setup build outputs
+build/
+installer_output/
 
 # IDE
 .vscode/
