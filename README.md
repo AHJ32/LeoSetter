@@ -1,91 +1,131 @@
-# LeoSetter — Minimal MVP
+# LeoSetter
 
-A lightweight metadata editor focused on the essentials: edit a small, practical set of metadata fields, batch apply/clear across a folder, and use templates that fill everything except keywords.
+<div align="center">
+  <img src="assets/LeoSetter.png" alt="LeoSetter Logo" width="180"/>
+  <br/>
+  <strong>A beautiful, dark-themed desktop application for batch editing image metadata.</strong>
+  <br/><br/>
 
-## MVP Features
+  ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square&logo=python)
+  ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-lightgrey?style=flat-square)
+  ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
+</div>
 
-- **Edit fields**
-  - GPS: Latitude, Longitude, Altitude (decimal degrees)
-  - Description: Title, Subject, Rating, Tags (keywords), Comments
-  - Origin: Authors, Date taken, Program name, Date acquired, Copyright
-- **Batch apply**: Apply current form to all images in the open folder (keywords excluded by default on batch apply)
-- **Batch clear**: Clear selected fields for all images (or clear all supported fields if you confirm)
-- **Templates**: Save current form as a template and apply templates (keywords are excluded on apply)
-- **Image formats**: JPEG, TIFF, PNG, WEBP (and others supported by `exiftool`)
+---
 
-## Installation
+## ✨ Features
 
-### Prerequisites
+- 🖼️ **Batch Metadata Editing** — Open a folder and edit EXIF/XMP metadata for all images at once
+- 🏷️ **Field Support** — Title, Subject, Tags, Comments, Rating, Authors, Date Taken, Copyright, GPS and more
+- 📋 **Templates** — Save and reapply metadata presets across multiple photo sessions
+- 🗺️ **Map Picker** — Click anywhere on an interactive map to set GPS coordinates
+- 💾 **Safe by Default** — Staged changes are previewed before writing; choose to overwrite in-place or not
+- 🌙 **Dark Theme** — Beautiful glassmorphism-inspired dark UI with custom-themed dialog windows
 
-- Python 3.10+
-- Qt5 libraries (installed automatically by pip via PyQt5)
-- Python virtual environment (recommended)
-- `exiftool` (system package, used for robust EXIF/XMP write/read)
-  - Debian/Ubuntu/Pop!_OS: `sudo apt-get install -y exiftool`
+## 📦 Installation
 
-### Setup
+### Option 1: Windows Installer (Recommended)
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/leosetter.git
-   cd leosetter
-   ```
+> Download the latest `LeoSetterSetup.exe` from [Releases](https://github.com/AHJ32/LeoSetter/releases).
 
-2. Create and activate a virtual environment (recommended):
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
+Run the installer and follow the setup wizard. It will:
+- Install all Python dependencies automatically
+- Optionally create a Desktop shortcut
+- Optionally add LeoSetter to the Start Menu
 
-3. Install the required dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Install `exiftool` (if you haven't already):
+No Python installation is required.
 
-## Usage
+---
 
-### Running the Application (from source)
+### Option 2: Run from Source
 
-To start the minimal app:
+#### Prerequisites
 
-```bash
+- **Python 3.10 or newer**
+- **exiftool** installed on your system
+
+#### Windows Setup
+
+1. Install [Python 3.10+](https://www.python.org/downloads/) (check "Add to PATH")
+2. Install exiftool — download from [exiftool.org](https://exiftool.org/), rename `exiftool(-k).exe` → `exiftool.exe` and place it on your PATH
+3. Clone the repository and install dependencies:
+
+```powershell
+git clone https://github.com/AHJ32/LeoSetter.git
+cd LeoSetter
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
 python run.py
 ```
 
-Alternatively, you can use the CLI alias installed by setup.py:
+#### Linux Setup (Debian / Ubuntu / Pop!_OS)
+
+1. Install Python and exiftool via your package manager:
 
 ```bash
-leosetter
+sudo apt-get update
+sudo apt-get install -y python3 python3-venv python3-pip exiftool
 ```
 
-### Basic Operations
+2. Clone the repository and install dependencies:
 
-- Open a folder of images via File → "Open Folder…" (left pane lists images)
-- Selecting a file loads its metadata into the form on the right
-- "Save Current" writes metadata to a copy file (safer default)
-- "Apply To All (Skip Keywords)" batch-applies the current form to all images in the open folder (keywords excluded)
-- "Clear Selected Fields (Batch)" clears the non-empty fields you’ve entered; leave everything empty to clear all supported fields
-- Templates: "Save Template…" stores the current form; "Apply Template (Skip Keywords)" loads a template, fills the form except keywords, and can batch-apply
+```bash
+git clone https://github.com/AHJ32/LeoSetter.git
+cd LeoSetter
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python3 run.py
+```
 
-## Building
+> **Note for Linux:** The custom dark title bar uses a Windows DWM API call that is skipped on Linux. Dialogs fall back to the standard `overrideredirect` approach.
 
-Packaging is not part of the MVP yet. If you want a single-file build, consider PyInstaller later.
+---
 
-## Contributing
+## 🚀 Usage
 
-Contributions are welcome. Focus areas:
+1. **Open a Folder** — Use the toolbar's *"Open Folder"* button to browse to a directory of images.
+2. **Select an Image** — Click any filename in the sidebar to load its current metadata.
+3. **Edit Fields** — Fill in the metadata form on the right (Title, Tags, GPS, etc.).
+4. **Stage Changes** — Edited images are highlighted in the sidebar; changes are not written yet.
+5. **Save** — Click *"Save Changes"* to write staged changes for all images to disk.
 
-- Stability of read/write across formats using `exiftool`
-- DMS input for GPS (conversion to decimal degrees)
-- Thumbnail grid for the file list
-- Optional in-place overwrite with automatic backups
+### Toolbar Quick Actions
 
-## License
+| Button | Action |
+|---|---|
+| 📁 Open Folder | Browse for a folder of images |
+| 📄 Set Filenames | Pre-fill Title, Subject, and Comments from each image's filename |
+| 🏷️ Set Tags | Batch-assign the same tag(s) to all images |
+| 🗺️ Pick from Map | Open an interactive map to pick GPS coordinates |
+| 💾 Save Template | Save the current form as a reusable preset |
+| 📋 Apply Template | Load a saved preset into the current form |
+| ⚙️ Manage Templates | Delete or review saved templates |
+| 💾 Save Changes | Write all staged metadata changes to disk |
+| 🗑️ Clear All | Clear metadata from all images (with confirmation) |
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+---
 
-## Acknowledgments
+## 🤝 Contributing
 
-- GeoSetter for inspiration
-- All the open-source libraries used in this project
+We welcome contributions of all kinds! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on:
+
+- Reporting bugs
+- Requesting features
+- Submitting pull requests
+
+---
+
+## 📜 License
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 🙏 Acknowledgments
+
+- [GeoSetter](https://www.geosetter.de/en/) for inspiration
+- [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) for beautiful cross-platform UI components
+- [tkintermapview](https://github.com/TomSchimansky/TkinterMapView) for the interactive map widget
+- [ExifTool by Phil Harvey](https://exiftool.org/) for robust metadata read/write

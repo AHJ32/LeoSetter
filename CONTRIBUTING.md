@@ -1,54 +1,117 @@
 # Contributing to LeoSetter
 
-First off, thank you for considering contributing to LeoSetter! It's people like you that make LeoSetter such a great tool.
+Thank you for considering contributing to LeoSetter! This document outlines how to report bugs, request features, and submit code changes.
 
-## Where do I go from here?
+---
 
-If you've noticed a bug or have a feature request, please make one! It's generally best if you get confirmation of your bug or approval for your feature request this way before starting to code.
+## 📋 Table of Contents
 
-## Fork & create a branch
+- [Code of Conduct](#code-of-conduct)
+- [Reporting Bugs](#reporting-bugs)
+- [Requesting Features](#requesting-features)
+- [Contributing Code](#contributing-code)
+- [Development Setup](#development-setup)
+- [Pull Request Guidelines](#pull-request-guidelines)
 
-If this is something you think you can fix, then fork LeoSetter and create a branch with a descriptive name.
+---
 
-A good branch name would be (where issue #325 is the ticket you're working on):
+## Code of Conduct
 
-```sh
-git checkout -b 325-add-dms-gps-support
+Please be respectful and constructive. We aim to keep this a welcoming project for everyone.
+
+---
+
+## 🐛 Reporting Bugs
+
+1. **Search first** — Check [existing issues](https://github.com/AHJ32/LeoSetter/issues) to see if the bug has already been reported.
+2. **Open a Bug Report** — Click [New Issue → Bug Report](https://github.com/AHJ32/LeoSetter/issues/new?template=bug_report.md) and fill in the template completely, including:
+   - Your OS and Python version
+   - Steps to reproduce the bug
+   - What you expected vs. what actually happened
+   - Any relevant error messages or screenshots
+
+---
+
+## 💡 Requesting Features
+
+Have an idea for a new feature or improvement? Here's how to request it:
+
+1. **Search first** — Check [existing issues](https://github.com/AHJ32/LeoSetter/issues?q=is%3Aissue+label%3Aenhancement) to avoid duplicates.
+2. **Open a Feature Request** — Click [New Issue → Feature Request](https://github.com/AHJ32/LeoSetter/issues/new?template=feature_request.md) and describe:
+   - **What** the feature does
+   - **Why** it would be useful (use case)
+   - **How** you imagine it working (optional, but helpful)
+3. **Discuss** — Wait for a maintainer to review and label your request. Features marked `accepted` are open for implementation.
+
+> **Tip:** A well-described feature request with a clear use case is much more likely to be accepted quickly.
+
+---
+
+## 🛠️ Contributing Code
+
+### 1. Fork & Branch
+
+Fork the repo and create a descriptive branch:
+
+```bash
+git checkout -b 42-add-batch-rename
 ```
 
-## Get the test suite running
+Branch names should follow the pattern `<issue-number>-<short-description>`.
 
-Make sure you have a working Python development environment.
-Install the dependencies using `pip install -r requirements.txt`. 
-You will also need `exiftool` installed on your system.
+### 2. Development Setup
 
-Currently, you can test the application simply by running it:
-```sh
+**Windows:**
+```powershell
+git clone https://github.com/YOUR_USERNAME/LeoSetter.git
+cd LeoSetter
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
 python run.py
 ```
 
-*Note: Automated tests will be added in a future update.*
-
-## Implement your fix or feature
-
-At this point, you're ready to make your changes. Feel free to ask for help; everyone is a beginner at first.
-
-## Make a Pull Request
-
-At this point, you should switch back to your master branch and make sure it's up to date with LeoSetter's master branch:
-
-```sh
-git remote add upstream git@github.com:yourusername/leosetter.git
-git checkout master
-git pull upstream master
+**Linux:**
+```bash
+git clone https://github.com/YOUR_USERNAME/LeoSetter.git
+cd LeoSetter
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python3 run.py
 ```
 
-Then update your feature branch from your local copy of master, and push it!
+Also install `exiftool` on your system:
+- **Windows:** Download from [exiftool.org](https://exiftool.org/)
+- **Linux:** `sudo apt-get install exiftool`
 
-```sh
-git checkout 325-add-dms-gps-support
-git rebase master
-git push --set-upstream origin 325-add-dms-gps-support
+### 3. Make Your Changes
+
+- Keep code changes focused — one feature or bug fix per PR
+- Follow the existing code style (CustomTkinter widgets, type hints, helper patterns)
+- Update `requirements.txt` if you add new dependencies
+- Test your changes by running the application manually
+
+### 4. Sync With Upstream
+
+Before opening a PR, sync your fork with the latest `main`:
+
+```bash
+git remote add upstream https://github.com/AHJ32/LeoSetter.git
+git fetch upstream
+git rebase upstream/main
 ```
 
-Finally, go to GitHub and make a Pull Request! Please use the provided Pull Request template to describe your changes.
+---
+
+## Pull Request Guidelines
+
+- Link the related issue in your PR description (e.g., `Closes #42`)
+- Fill in the [Pull Request Template](.github/PULL_REQUEST_TEMPLATE.md)
+- Keep PRs small and focused — large PRs are harder to review
+- Screenshots or screen recordings are appreciated for UI changes
+- A maintainer will review your PR, request changes if needed, and merge once it's ready
+
+---
+
+*Thank you for helping make LeoSetter better! 🙏*
