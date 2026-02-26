@@ -31,6 +31,7 @@ a = Analysis(
         # ── App icons and assets ──────────────────────────────────────────────
         (os.path.join('assets', 'LeoSetter.ico'),  'assets'),
         (os.path.join('assets', 'LeoSetter.png'),  'assets'),
+        (os.path.join('assets', 'github.png'),     'assets'),
         (os.path.join('assets', 'blank.ico'),       'assets'),
         # ── Third-party bundled assets ────────────────────────────────────────
         *ctk_datas,

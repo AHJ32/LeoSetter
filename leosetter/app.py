@@ -342,10 +342,15 @@ class App(ctk.CTk):
         self.btn_map.pack(side="left", padx=5, pady=10)
 
         # ── Right-side toolbar icons ───────────────────────────────────────────
-        # GitHub icon — opens the repo in the browser
+        gh_img_path = _resource_path("assets", "github.png")
+        gh_img = ctk.CTkImage(light_image=Image.open(gh_img_path),
+                              dark_image=Image.open(gh_img_path),
+                              size=(24, 24))
+
         self.btn_github = ctk.CTkButton(
             self.toolbar,
-            text="🐙",
+            text="",
+            image=gh_img,
             width=44, height=40,
             fg_color="transparent",
             hover_color="#27212f",
