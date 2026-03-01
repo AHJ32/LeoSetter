@@ -262,7 +262,12 @@ def _tag_assignments(payload: Dict[str, str], skip_keywords: bool = False) -> Li
                         args.append(f"-{tag}={', '.join(parts)}")
             else:
                 for tag in target_tags:
-                    args.append(f"-{tag}={value}")
+                    v = value
+                    if field == "Rating" and tag == "EXIF:RatingPercent":
+                        # Windows File Explorer maps 1-5 stars to these exact percentage values
+                        percent_map = {"1": "1", "2": "25", "3": "50", "4": "75", "5": "99"}
+                        v = percent_map.get(value, value)
+                    args.append(f"-{tag}={v}")
     return args
 
 
